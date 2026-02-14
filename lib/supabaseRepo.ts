@@ -212,6 +212,17 @@ const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
     return a.time_seconds - b.time_seconds;
   });
 
+const fetchLatestChallengeDate = async (): Promise<string | null> => {
+  const { data, error } = await supabase
+    .from('daily_challenge_runs')
+    .select('challenge_date')
+    .order('played_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { challenge_date: string }).challenge_date;
+};
+
 export const resolveActiveChallengeDate = async (): Promise<string> => {
   const todayLocal = formatLocalDate(new Date());
   const { data, error } = await supabase
@@ -351,6 +362,20 @@ export const fetchDailyLeaderboard = async (
       rows = byPlayedAt as DailyRunRow[];
     }
   }
+  if (rows.length === 0) {
+    const latestDate = await fetchLatestChallengeDate();
+    if (latestDate) {
+      const { data: byLatestDate, error: byLatestDateError } = await supabase
+        .from('daily_challenge_runs')
+        .select(
+          'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+        )
+        .eq('challenge_date', latestDate);
+      if (!byLatestDateError && byLatestDate) {
+        rows = byLatestDate as DailyRunRow[];
+      }
+    }
+  }
   const sorted = sortLeaderboardRows(rows);
   return sorted.map((row, idx) => ({ ...row, rank: idx + 1 }));
 };
@@ -440,6 +465,20 @@ export const fetchDailyRunsWithAnswersByDate = async (
       .lt('played_at', endIso);
     if (!byPlayedAtError && byPlayedAt) {
       runs = sortLeaderboardRows(byPlayedAt as DailyRunRow[]);
+    }
+  }
+  if (runs.length === 0) {
+    const latestDate = await fetchLatestChallengeDate();
+    if (latestDate) {
+      const { data: byLatestDate, error: byLatestDateError } = await supabase
+        .from('daily_challenge_runs')
+        .select(
+          'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+        )
+        .eq('challenge_date', latestDate);
+      if (!byLatestDateError && byLatestDate) {
+        runs = sortLeaderboardRows(byLatestDate as DailyRunRow[]);
+      }
     }
   }
   if (runs.length === 0) return [];
