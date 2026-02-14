@@ -8,7 +8,6 @@ import {
   SearchResultItem,
 } from '../../appTypes';
 import { DifficultyLevel } from '../../types';
-import mascot from '../../assets/robin-mascot.svg';
 
 export type ContributeTab = 'home' | 'bilatu' | 'mailak' | 'eguneko';
 
@@ -118,10 +117,15 @@ export const ContributeScreen: React.FC<Props> = ({
                   </div>
 
                   <div
-                    className="mx-auto mt-5 w-56 sm:w-64"
+                    className="mx-auto mt-5 w-52 sm:w-56"
                     style={{ animation: 'home-float 3.6s ease-in-out infinite' }}
                   >
-                    <img src={mascot} alt="Mascota" className="w-full h-auto select-none" draggable={false} />
+                    <img
+                      src="/elio-icon.svg"
+                      alt="Elio"
+                      className="w-full h-auto select-none rounded-[2rem] shadow-[0_20px_40px_-22px_rgba(0,0,0,0.55)]"
+                      draggable={false}
+                    />
                   </div>
 
                   <button

@@ -10,14 +10,16 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/elio-icon.svg",
+      "src": "/elio-icon.svg?v=elio2",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     },
     {
-      "src": "/elio-icon.svg",
+      "src": "/elio-icon.svg?v=elio2",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
