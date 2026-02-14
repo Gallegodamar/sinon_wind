@@ -76,3 +76,30 @@ create policy "daily answers insert own run"
         and r.user_id = auth.uid()
     )
   );
+
+-- Optional: canonical "active challenge date" controlled from Supabase.
+-- App will read this date; if missing, it falls back to local today.
+create table if not exists public.daily_challenge_settings (
+  id smallint primary key check (id = 1),
+  active_challenge_date date not null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.daily_challenge_settings (id, active_challenge_date)
+values (1, (now() at time zone 'utc')::date)
+on conflict (id) do nothing;
+
+alter table public.daily_challenge_settings enable row level security;
+
+drop policy if exists "daily settings read authenticated" on public.daily_challenge_settings;
+create policy "daily settings read authenticated"
+  on public.daily_challenge_settings
+  for select
+  to authenticated
+  using (true);
+
+-- To manually move the challenge day (example: yesterday in UTC date):
+-- update public.daily_challenge_settings
+-- set active_challenge_date = ((now() at time zone 'utc')::date - interval '1 day')::date,
+--     updated_at = now()
+-- where id = 1;

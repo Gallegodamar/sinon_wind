@@ -10,7 +10,7 @@ import {
 } from '../appTypes';
 import { supabase } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
-import { getLocalDayUtcRange } from './dateUtils';
+import { formatLocalDate, getLocalDayUtcRange } from './dateUtils';
 
 export const searchWords = async (term: string): Promise<SearchResultItem[]> => {
   const { data, error } = await supabase
@@ -212,11 +212,35 @@ const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
     return a.time_seconds - b.time_seconds;
   });
 
-export const hasPlayedDailyChallenge = async (
-  userId: string
-): Promise<boolean> => {
-  const { startIso, endIso } = getLocalDayUtcRange();
+export const resolveActiveChallengeDate = async (): Promise<string> => {
+  const fallback = formatLocalDate(new Date());
   const { data, error } = await supabase
+    .from('daily_challenge_settings')
+    .select('active_challenge_date')
+    .eq('id', 1)
+    .single();
+
+  if (error || !data) return fallback;
+  const activeDate = (data as { active_challenge_date?: string }).active_challenge_date;
+  return activeDate || fallback;
+};
+
+export const hasPlayedDailyChallenge = async (
+  userId: string,
+  challengeDate: string
+): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('daily_challenge_runs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('challenge_date', challengeDate)
+    .limit(1);
+
+  if (!error) return (data ?? []).length > 0;
+
+  // Backward-compatible fallback if challenge_date lookup fails unexpectedly.
+  const { startIso, endIso } = getLocalDayUtcRange();
+  const { data: byPlayedAt, error: byPlayedAtError } = await supabase
     .from('daily_challenge_runs')
     .select('id')
     .eq('user_id', userId)
@@ -224,8 +248,8 @@ export const hasPlayedDailyChallenge = async (
     .lt('played_at', endIso)
     .limit(1);
 
-  if (error) return false;
-  return (data ?? []).length > 0;
+  if (byPlayedAtError) return false;
+  return (byPlayedAt ?? []).length > 0;
 };
 
 export const saveDailyChallengeRun = async (params: {

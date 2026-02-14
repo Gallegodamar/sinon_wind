@@ -2,12 +2,12 @@ import { useCallback, useRef, useState } from 'react';
 import { AuthUser, FailedWordStat } from '../appTypes';
 import { DifficultyLevel, GameStatus, Player, Question, WordData } from '../types';
 import { generatePoolFromData } from '../lib/gameLogic';
-import { formatLocalDate } from '../lib/dateUtils';
 import {
   fetchAllActiveWords,
   hasPlayedDailyChallenge,
   insertGameAnswer,
   insertGameRun,
+  resolveActiveChallengeDate,
   saveDailyChallengeRun,
 } from '../lib/supabaseRepo';
 
@@ -120,7 +120,8 @@ export const useGameSession = ({
 
   const startDailyCompetition = useCallback(async () => {
     if (!user) return;
-    const alreadyPlayed = await hasPlayedDailyChallenge(user.id);
+    const challengeDate = await resolveActiveChallengeDate();
+    const alreadyPlayed = await hasPlayedDailyChallenge(user.id, challengeDate);
     if (alreadyPlayed) {
       setHasPlayedToday(true);
       alert('Gaurko lehiaketa jada jokatu duzu.');
@@ -234,7 +235,7 @@ export const useGameSession = ({
       setIsSaving(true);
       try {
         if (gameMode === 'daily') {
-          const today = formatLocalDate(new Date());
+          const today = await resolveActiveChallengeDate();
           const result = await saveDailyChallengeRun({
             userId: user.id,
             playerName: player.name,

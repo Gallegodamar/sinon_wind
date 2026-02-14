@@ -10,6 +10,7 @@ import {
   fetchDailyRunsWithAnswersByDate,
   fetchPeriodLeaderboard,
   hasPlayedDailyChallenge,
+  resolveActiveChallengeDate,
 } from '../lib/supabaseRepo';
 import {
   formatLocalDate,
@@ -42,14 +43,18 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
   );
   const [hasPlayedToday, setHasPlayedToday] = useState(false);
   const [isLoadingCompetition, setIsLoadingCompetition] = useState(false);
+  const [activeChallengeDate, setActiveChallengeDate] = useState<string>(
+    formatLocalDate(new Date())
+  );
 
   const refreshCompetitionData = async () => {
     if (!userId) return;
     setIsLoadingCompetition(true);
     try {
-      const today = formatLocalDate(new Date());
+      const today = await resolveActiveChallengeDate();
+      setActiveChallengeDate(today);
       const [playedToday, daily, weekly, monthly, runsByDate] = await Promise.all([
-        hasPlayedDailyChallenge(userId),
+        hasPlayedDailyChallenge(userId, today),
         fetchDailyLeaderboard(today),
         fetchPeriodLeaderboard(getCurrentWeekRange()),
         fetchPeriodLeaderboard(getCurrentMonthRange()),
@@ -88,6 +93,7 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
     monthlyLeaderboard,
     competitionDate,
     setCompetitionDate,
+    activeChallengeDate,
     dailyRunsByDate,
     hasPlayedToday,
     setHasPlayedToday,
