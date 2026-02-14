@@ -182,7 +182,8 @@ export const insertGameRun = async (params: {
 type DailyRunRow = {
   id: string;
   user_id: string;
-  player_name: string;
+  player_name: string | null;
+  display_name?: string | null;
   challenge_date: string;
   played_at: string;
   score: number;
@@ -211,6 +212,11 @@ const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
     if (b.score !== a.score) return b.score - a.score;
     return a.time_seconds - b.time_seconds;
   });
+
+const mapRunWithName = (row: DailyRunRow): DailyRunRow & { player_name: string } => ({
+  ...row,
+  player_name: row.player_name || row.display_name || 'ANON',
+});
 
 const fetchLatestChallengeDate = async (): Promise<string | null> => {
   const { data, error } = await supabase
@@ -304,6 +310,7 @@ export const saveDailyChallengeRun = async (params: {
     .insert({
       user_id: userId,
       player_name: playerName,
+      display_name: playerName,
       challenge_date: challengeDate,
       played_at: new Date().toISOString(),
       score,
@@ -363,19 +370,19 @@ export const fetchDailyLeaderboard = async (
   const { data, error } = await supabase
     .from('daily_challenge_runs')
     .select(
-      'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+      'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
     )
     .eq('challenge_date', challengeDate);
   let rows = error || !data ? [] : (data as DailyRunRow[]);
   if (rows.length === 0) {
     const { startIso, endIso } = getLocalDayUtcRange();
-    const { data: byPlayedAt, error: byPlayedAtError } = await supabase
-      .from('daily_challenge_runs')
-      .select(
-        'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
-      )
-      .gte('played_at', startIso)
-      .lt('played_at', endIso);
+      const { data: byPlayedAt, error: byPlayedAtError } = await supabase
+        .from('daily_challenge_runs')
+        .select(
+          'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+        )
+        .gte('played_at', startIso)
+        .lt('played_at', endIso);
     if (!byPlayedAtError && byPlayedAt) {
       rows = byPlayedAt as DailyRunRow[];
     }
@@ -386,7 +393,7 @@ export const fetchDailyLeaderboard = async (
       const { data: byLatestDate, error: byLatestDateError } = await supabase
         .from('daily_challenge_runs')
         .select(
-          'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+          'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
         )
         .eq('challenge_date', latestDate);
       if (!byLatestDateError && byLatestDate) {
@@ -394,7 +401,7 @@ export const fetchDailyLeaderboard = async (
       }
     }
   }
-  const sorted = sortLeaderboardRows(rows);
+  const sorted = sortLeaderboardRows(rows.map(mapRunWithName));
   return sorted.map((row, idx) => ({ ...row, rank: idx + 1 }));
 };
 
@@ -406,7 +413,7 @@ export const fetchPeriodLeaderboard = async (params: {
   const { data, error } = await supabase
     .from('daily_challenge_runs')
     .select(
-      'user_id, player_name, score, correct, total, time_seconds, played_at'
+      'user_id, player_name, display_name, score, correct, total, time_seconds, played_at'
     )
     .gte('played_at', startIso)
     .lt('played_at', endIso);
@@ -428,7 +435,8 @@ export const fetchPeriodLeaderboard = async (params: {
 
   for (const row of data as Array<{
     user_id: string;
-    player_name: string;
+    player_name: string | null;
+    display_name?: string | null;
     score: number;
     correct: number;
     total: number;
@@ -436,7 +444,7 @@ export const fetchPeriodLeaderboard = async (params: {
   }>) {
     const cur = agg.get(row.user_id) || {
       user_id: row.user_id,
-      player_name: row.player_name,
+      player_name: row.player_name || row.display_name || 'ANON',
       games_played: 0,
       total_score: 0,
       total_correct: 0,
@@ -448,7 +456,7 @@ export const fetchPeriodLeaderboard = async (params: {
     cur.total_correct += row.correct;
     cur.total_questions += row.total;
     cur.total_time_seconds += row.time_seconds;
-    cur.player_name = row.player_name || cur.player_name;
+    cur.player_name = row.player_name || row.display_name || cur.player_name;
     agg.set(row.user_id, cur);
   }
 
@@ -466,7 +474,7 @@ export const fetchDailyRunsWithAnswersByDate = async (
   const { data: runsData, error: runsError } = await supabase
     .from('daily_challenge_runs')
     .select(
-      'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+      'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
     )
     .eq('challenge_date', challengeDate);
   let runs = sortLeaderboardRows(
@@ -477,7 +485,7 @@ export const fetchDailyRunsWithAnswersByDate = async (
     const { data: byPlayedAt, error: byPlayedAtError } = await supabase
       .from('daily_challenge_runs')
       .select(
-        'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+        'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
       )
       .gte('played_at', startIso)
       .lt('played_at', endIso);
@@ -491,7 +499,7 @@ export const fetchDailyRunsWithAnswersByDate = async (
       const { data: byLatestDate, error: byLatestDateError } = await supabase
         .from('daily_challenge_runs')
         .select(
-          'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+          'id, user_id, player_name, display_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
         )
         .eq('challenge_date', latestDate);
       if (!byLatestDateError && byLatestDate) {
@@ -521,8 +529,11 @@ export const fetchDailyRunsWithAnswersByDate = async (
     answersByRun.set(answer.run_id, list);
   }
 
-  return runs.map((run) => ({
+  return runs.map((rawRun) => {
+    const run = mapRunWithName(rawRun);
+    return ({
     ...run,
     answers: answersByRun.get(run.id) || [],
-  }));
+    });
+  });
 };
