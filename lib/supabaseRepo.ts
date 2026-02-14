@@ -213,16 +213,18 @@ const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
   });
 
 export const resolveActiveChallengeDate = async (): Promise<string> => {
-  const fallback = formatLocalDate(new Date());
+  const todayLocal = formatLocalDate(new Date());
   const { data, error } = await supabase
     .from('daily_challenge_settings')
     .select('active_challenge_date')
     .eq('id', 1)
     .single();
 
-  if (error || !data) return fallback;
+  if (error || !data) return todayLocal;
   const activeDate = (data as { active_challenge_date?: string }).active_challenge_date;
-  return activeDate || fallback;
+  if (!activeDate) return todayLocal;
+  // Safety: if backend date is behind client local day, use local day for eligibility.
+  return activeDate < todayLocal ? todayLocal : activeDate;
 };
 
 export const hasPlayedDailyChallenge = async (

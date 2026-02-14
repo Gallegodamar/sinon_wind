@@ -103,20 +103,21 @@ export const ContributeScreen: React.FC<Props> = ({
                 </p>
                 <button
                   onClick={startDailyCompetition}
-                  disabled={isLoadingWords || hasPlayedToday}
+                  disabled={isLoadingWords}
                   className={
                     'w-full mt-3 py-4 rounded-2xl font-black uppercase text-sm ' +
-                    (hasPlayedToday
+                    (isLoadingWords
                       ? 'bg-slate-200 text-slate-500'
                       : 'bg-emerald-500 text-white shadow-lg')
                   }
                 >
-                  {hasPlayedToday
-                    ? 'GAUR JOKATUTA'
-                    : isLoadingWords
-                      ? 'KARGATZEN...'
-                      : 'Gaurko jokoa'}
+                  {isLoadingWords ? 'KARGATZEN...' : 'Gaurko jokoa'}
                 </button>
+                {hasPlayedToday && (
+                  <p className="mt-2 text-[10px] font-black text-slate-400 uppercase">
+                    Oharra: gaurko emaitza baduzu, gordetzean blokeatuko da partida bikoitza.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

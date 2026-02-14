@@ -53,6 +53,9 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
     try {
       const today = await resolveActiveChallengeDate();
       setActiveChallengeDate(today);
+      if (competitionDate > today) {
+        setCompetitionDate(today);
+      }
       const [playedToday, daily, weekly, monthly, runsByDate] = await Promise.all([
         hasPlayedDailyChallenge(userId, today),
         fetchDailyLeaderboard(today),

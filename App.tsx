@@ -164,7 +164,6 @@ const App: React.FC = () => {
     ensureLevelWords,
     fetchMostFailedWords,
     setStatus,
-    setHasPlayedToday,
     refreshCompetitionData,
   });
   const isWordsBusy = isLoadingWords || isLoadingWordCache;
