@@ -279,7 +279,12 @@ export const saveDailyChallengeRun = async (params: {
     responseMs: number;
     points: number;
   }>;
-}): Promise<{ ok: boolean; reason?: 'already_played' | 'error' }> => {
+}): Promise<{
+  ok: boolean;
+  reason?: 'already_played' | 'error';
+  errorCode?: string;
+  errorMessage?: string;
+}> => {
   const {
     userId,
     playerName,
@@ -313,7 +318,12 @@ export const saveDailyChallengeRun = async (params: {
   if (runError) {
     const errorCode = (runError as { code?: string }).code;
     if (errorCode === '23505') return { ok: false, reason: 'already_played' };
-    return { ok: false, reason: 'error' };
+    return {
+      ok: false,
+      reason: 'error',
+      errorCode,
+      errorMessage: runError.message,
+    };
   }
 
   const runId = (runData as { id: string }).id;
@@ -335,7 +345,15 @@ export const saveDailyChallengeRun = async (params: {
     .from('daily_challenge_answers')
     .insert(answerRows);
 
-  if (answersError) return { ok: false, reason: 'error' };
+  if (answersError) {
+    // Keep run as valid even if per-answer log fails.
+    return {
+      ok: true,
+      reason: 'error',
+      errorCode: (answersError as { code?: string }).code,
+      errorMessage: answersError.message,
+    };
+  }
   return { ok: true };
 };
 

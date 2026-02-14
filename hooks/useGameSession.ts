@@ -251,9 +251,22 @@ export const useGameSession = ({
             setHasPlayedToday(true);
             alert('Gaurko lehiaketa jada erregistratuta dago.');
           } else if (!result.ok) {
-            alert('Ezin izan da eguneko partida gorde. Saiatu berriro.');
+            const detail = [result.errorCode, result.errorMessage]
+              .filter(Boolean)
+              .join(' - ');
+            alert(
+              `Ezin izan da eguneko partida gorde. ${detail || 'Saiatu berriro.'}`
+            );
           } else {
             setHasPlayedToday(true);
+            if (result.reason === 'error') {
+              const detail = [result.errorCode, result.errorMessage]
+                .filter(Boolean)
+                .join(' - ');
+              alert(
+                `Partida gorde da, baina erantzun-logean errorea egon da. ${detail}`
+              );
+            }
           }
           await refreshCompetitionData();
         } else {
