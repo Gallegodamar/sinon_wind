@@ -7,7 +7,8 @@ import {
   PeriodLeaderboardEntry,
   SearchResultItem,
 } from '../../appTypes';
-import { DifficultyLevel, GameStatus } from '../../types';
+import { DifficultyLevel } from '../../types';
+import mascot from '../../assets/robin-mascot.svg';
 
 export type ContributeTab = 'home' | 'bilatu' | 'mailak' | 'eguneko';
 
@@ -76,6 +77,14 @@ export const ContributeScreen: React.FC<Props> = ({
 
   return (
     <div className="h-[100dvh] w-full flex flex-col items-center bg-indigo-950 safe-pt safe-px overflow-hidden">
+      <style>
+        {`
+          @keyframes home-float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+          }
+        `}
+      </style>
       <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl p-6 md:p-8 flex flex-col h-full max-h-[92dvh] mb-4">
         <div className="flex justify-between items-center mb-4 shrink-0">
           <button onClick={onBack} className="text-xs font-black text-slate-400 uppercase">
@@ -93,106 +102,98 @@ export const ContributeScreen: React.FC<Props> = ({
         <div className="grow overflow-y-auto custom-scrollbar pr-1 pb-4">
           {activeTab === 'home' && (
             <div className="space-y-4">
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Kaixo, {greetingName}
-                </p>
-                <p className="text-xl font-black text-indigo-950">
-                  Gaurko jokoa prest dago
-                </p>
-                <p className="text-[11px] font-bold text-slate-500 mt-1">
-                  10 sinonimo, maila guztiak, eguneko partida bakarra.
-                </p>
-                <button
-                  onClick={startDailyCompetition}
-                  disabled={isLoadingWords || hasPlayedToday}
-                  className={
-                    'w-full mt-3 py-4 rounded-2xl font-black uppercase text-sm ' +
-                    (hasPlayedToday || isLoadingWords
-                      ? 'bg-slate-200 text-slate-500'
-                      : 'bg-emerald-500 text-white shadow-lg')
-                  }
-                >
-                  {hasPlayedToday
-                    ? 'GAUR JOKATUTA'
-                    : isLoadingWords
-                      ? 'KARGATZEN...'
-                      : 'Gaurko jokoa'}
-                </button>
-                {hasPlayedToday && (
-                  <p className="mt-2 text-[10px] font-black text-slate-400 uppercase">
-                    Oharra: gaurko emaitza baduzu, gordetzean blokeatuko da partida bikoitza.
-                  </p>
-                )}
+              <div className="relative overflow-hidden rounded-3xl border border-[#5a4f2c]/20 p-4 sm:p-5 bg-[radial-gradient(65%_48%_at_50%_34%,rgba(229,98,31,0.48),rgba(188,146,57,0.2)_45%,rgba(130,135,72,0.95)_100%)]">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_65%_at_50%_100%,rgba(30,32,20,0.3),transparent_62%)]" />
+                <div className="relative">
+                  <div className="mx-auto w-fit rounded-3xl bg-[#f1f5ed]/90 px-5 py-3 border border-[#cedac7]">
+                    <p className="text-[11px] font-bold tracking-wide text-[#5c6556]">
+                      Kaixo, {greetingName}
+                    </p>
+                    <p
+                      className="text-[28px] leading-none text-[#2f3b2b]"
+                      style={{ fontFamily: "'Trebuchet MS','Avenir Next',sans-serif" }}
+                    >
+                      Minutu bat?
+                    </p>
+                  </div>
+
+                  <div
+                    className="mx-auto mt-5 w-56 sm:w-64"
+                    style={{ animation: 'home-float 3.6s ease-in-out infinite' }}
+                  >
+                    <img src={mascot} alt="Mascota" className="w-full h-auto select-none" draggable={false} />
+                  </div>
+
+                  <button
+                    onClick={startDailyCompetition}
+                    disabled={isLoadingWords || hasPlayedToday}
+                    className={
+                      'mx-auto mt-6 block w-full max-w-sm rounded-2xl px-5 py-4 text-sm font-black uppercase tracking-wide shadow-xl transition-all ' +
+                      (hasPlayedToday || isLoadingWords
+                        ? 'bg-[#d6dccf] text-[#6a7268]'
+                        : 'bg-gradient-to-b from-[#63b487] to-[#2f8d6f] text-white active:scale-[0.99]')
+                    }
+                  >
+                    {hasPlayedToday
+                      ? 'GAUR JOKATUTA'
+                      : isLoadingWords
+                        ? 'KARGATZEN...'
+                        : 'Gaurko jokoa'}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setActiveTab('mailak')}
-                  className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left"
+                  className="rounded-2xl border border-slate-200 bg-[#f7faf5] p-4 text-left"
                 >
-                  <p className="text-xs font-black text-indigo-950 uppercase">
-                    Sinonimoak mailaka
-                  </p>
-                  <p className="text-[10px] font-bold text-slate-500 mt-1">
-                    Aukeratu maila eta jolastu
-                  </p>
+                  <p className="text-sm font-black text-[#2c3f30]">Sinonimoak mailaka</p>
+                  <p className="mt-1 text-[11px] font-bold text-slate-500">Aukeratu maila</p>
                 </button>
                 <button
                   onClick={() => setActiveTab('bilatu')}
-                  className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left"
+                  className="rounded-2xl border border-slate-200 bg-[#f7faf5] p-4 text-left"
                 >
-                  <p className="text-xs font-black text-indigo-950 uppercase">
-                    Bilaketa
-                  </p>
-                  <p className="text-[10px] font-bold text-slate-500 mt-1">
-                    Hitzak eta sinonimoak ikusi
-                  </p>
+                  <p className="text-sm font-black text-[#2c3f30]">Bilaketa</p>
+                  <p className="mt-1 text-[11px] font-bold text-slate-500">Hitzak aztertu</p>
                 </button>
               </div>
 
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-black text-indigo-950 uppercase">
-                    Guribarlario (Gaur)
-                  </h3>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-black uppercase text-[#233269]">Guribarlario (Gaur)</h3>
                   <button
                     onClick={() => setActiveTab('eguneko')}
-                    className="text-[10px] font-black text-indigo-600 uppercase"
+                    className="text-[10px] font-black uppercase text-indigo-600"
                   >
                     Ikusi guztiak
                   </button>
                 </div>
                 {isLoadingCompetition ? (
-                  <p className="text-[10px] font-black text-slate-400 uppercase">
-                    Kargatzen...
-                  </p>
+                  <p className="text-[10px] font-black uppercase text-slate-400">Kargatzen...</p>
                 ) : competitionError ? (
-                  <p className="text-[10px] font-black text-rose-500">
-                    {competitionError}
-                  </p>
+                  <p className="text-[10px] font-black text-rose-500">{competitionError}</p>
                 ) : dailyLeaderboard.length === 0 ? (
-                  <p className="text-[10px] font-black text-slate-300 uppercase">
+                  <p className="text-[10px] font-black uppercase text-slate-300">
                     Oraindik ez dago emaitzarik.
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {dailyLeaderboard.slice(0, 5).map((entry) => (
+                    {dailyLeaderboard.slice(0, 3).map((entry) => (
                       <div
                         key={entry.id}
-                        className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between"
+                        className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3"
                       >
                         <div>
-                          <p className="text-xs font-black text-indigo-950 uppercase">
+                          <p className="text-xs font-black uppercase text-indigo-950">
                             #{entry.rank} {entry.player_name}
                           </p>
-                          <p className="text-[10px] font-black text-slate-400 uppercase">
+                          <p className="text-[10px] font-black uppercase text-slate-400">
                             {entry.correct}/{entry.total}
                           </p>
                         </div>
-                        <span className="text-lg font-black text-indigo-600">
-                          {entry.score}p
-                        </span>
+                        <span className="text-lg font-black text-emerald-600">{entry.score}p</span>
                       </div>
                     ))}
                   </div>

@@ -31,10 +31,10 @@ export const SetupScreen: React.FC<Props> = ({
           <div className="w-10"></div>
           <div className="text-center">
             <h1 className="text-3xl font-black text-indigo-950 tracking-tighter uppercase leading-none">
-              Sinonimoak
+              Elio
             </h1>
             <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-              Konfigurazioa
+              Jokoa
             </p>
           </div>
           <button

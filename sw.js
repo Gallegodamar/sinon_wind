@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'sinonimoak-v10';
+const CACHE_NAME = 'elio-v11';
 const ASSETS = [
   '/',
   'index.html',
