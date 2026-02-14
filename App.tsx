@@ -4,16 +4,26 @@ import { WordData, Player, Question, GameStatus, DifficultyLevel } from './types
 import { supabase } from './supabase';
 import {
   AuthUser,
+  DailyLeaderboardEntry,
+  DailyRunWithAnswers,
   GameRun,
+  LeaderboardPeriod,
   FailedWordStat,
+  PeriodLeaderboardEntry,
 } from './appTypes';
 import { generatePoolFromData } from './lib/gameLogic';
 import {
+  fetchAllActiveWords,
+  fetchDailyLeaderboard,
+  fetchDailyRunsWithAnswersByDate,
   fetchWordsByLevel,
   fetchHistoryByUser,
   fetchFailedWordsByUser,
+  fetchPeriodLeaderboard,
+  hasPlayedDailyChallenge,
   insertGameAnswer,
   insertGameRun,
+  saveDailyChallengeRun,
 } from './lib/supabaseRepo';
 import { AuthScreen } from './components/screens/AuthScreen';
 import { IntermissionScreen } from './components/screens/IntermissionScreen';
@@ -22,10 +32,54 @@ import { ReviewScreen } from './components/screens/ReviewScreen';
 import { useDebouncedWordSearch } from './hooks/useDebouncedWordSearch';
 
 const QUESTIONS_PER_PLAYER = 10;
+const DAILY_QUESTIONS = 10;
 const FAILED_WORDS_CACHE_TTL_MS = 30_000;
+const BASE_POINTS_PER_CORRECT = 10;
+type GameMode = 'regular' | 'daily';
+
+type PendingDailyAnswer = {
+  questionIndex: number;
+  sourceId: string;
+  hitza: string;
+  chosen: string;
+  correct: string;
+  isCorrect: boolean;
+  responseMs: number;
+  points: number;
+};
+
+const getTimeBonus = (seconds: number): number => {
+  if (seconds < 2) return 5;
+  if (seconds < 4) return 3;
+  if (seconds <= 7) return 1;
+  return 0;
+};
+
+const toDateOnly = (date: Date): string => date.toISOString().split('T')[0];
+
+const getCurrentWeekRange = () => {
+  const now = new Date();
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(now.getDate() + mondayOffset);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+};
+
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+};
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<GameStatus>(GameStatus.SETUP);
+  const [gameMode, setGameMode] = useState<GameMode>('regular');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>(1);
   const [numPlayers, setNumPlayers] = useState(2);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -37,8 +91,9 @@ const App: React.FC = () => {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   
-  const [currentTurnPenalties, setCurrentTurnPenalties] = useState(0);
+  const [currentAnswerBonus, setCurrentAnswerBonus] = useState(0);
   const turnStartTimeRef = useRef<number>(0);
+  const questionStartTimeRef = useRef<number>(0);
 
   // Auth, Search & History States
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -46,12 +101,31 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'bilatu' | 'historia'>('bilatu');
+  const [activeTab, setActiveTab] = useState<'bilatu' | 'historia' | 'lehiaketa'>('bilatu');
   const [historySubTab, setHistorySubTab] = useState<'gaur' | 'datuak' | 'hutsak'>('gaur');
   const [failedWordsLevel, setFailedWordsLevel] = useState<DifficultyLevel>(1);
   const [searchTerm, setSearchTerm] = useState('');
   const { searchResults, isSearching } = useDebouncedWordSearch(searchTerm);
   const [history, setHistory] = useState<GameRun[]>([]);
+  const [competitionPeriod, setCompetitionPeriod] =
+    useState<LeaderboardPeriod>('daily');
+  const [dailyLeaderboard, setDailyLeaderboard] = useState<
+    DailyLeaderboardEntry[]
+  >([]);
+  const [weeklyLeaderboard, setWeeklyLeaderboard] = useState<
+    PeriodLeaderboardEntry[]
+  >([]);
+  const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<
+    PeriodLeaderboardEntry[]
+  >([]);
+  const [competitionDate, setCompetitionDate] = useState<string>(
+    toDateOnly(new Date())
+  );
+  const [dailyRunsByDate, setDailyRunsByDate] = useState<DailyRunWithAnswers[]>(
+    []
+  );
+  const [hasPlayedToday, setHasPlayedToday] = useState(false);
+  const [isLoadingCompetition, setIsLoadingCompetition] = useState(false);
   const [failedWordsStats, setFailedWordsStats] = useState<FailedWordStat[]>(
     []
   );
@@ -70,6 +144,7 @@ const App: React.FC = () => {
     fetchedAt: number;
     data: FailedWordStat[];
   } | null>(null);
+  const pendingDailyAnswersRef = useRef<PendingDailyAnswer[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -89,12 +164,19 @@ const App: React.FC = () => {
   }, [user, activeTab]);
 
   useEffect(() => {
+    if (user && activeTab === 'lehiaketa') {
+      void refreshCompetitionData();
+    }
+  }, [user, activeTab, competitionDate]);
+
+  useEffect(() => {
     if (status === GameStatus.SETUP) {
       setPlayers(Array.from({ length: numPlayers }, (_, i) => ({ 
         id: i, 
         name: `Jokalaria ${i + 1}`, 
         score: 0, 
-        time: 0 
+        time: 0,
+        correctAnswers: 0,
       })));
     }
   }, [numPlayers, status]);
@@ -162,12 +244,36 @@ const App: React.FC = () => {
     setFailedWordsStats(stats);
   };
 
+  const refreshCompetitionData = async () => {
+    if (!user) return;
+    setIsLoadingCompetition(true);
+    try {
+      const today = toDateOnly(new Date());
+      const [playedToday, daily, weekly, monthly, runsByDate] = await Promise.all([
+        hasPlayedDailyChallenge(user.id, today),
+        fetchDailyLeaderboard(today),
+        fetchPeriodLeaderboard(getCurrentWeekRange()),
+        fetchPeriodLeaderboard(getCurrentMonthRange()),
+        fetchDailyRunsWithAnswersByDate(competitionDate),
+      ]);
+
+      setHasPlayedToday(playedToday);
+      setDailyLeaderboard(daily);
+      setWeeklyLeaderboard(weekly);
+      setMonthlyLeaderboard(monthly);
+      setDailyRunsByDate(runsByDate);
+    } finally {
+      setIsLoadingCompetition(false);
+    }
+  };
+
   const startNewGame = useCallback(async (isSolo: boolean = false) => {
+    setGameMode('regular');
     setIsLoadingWords(true);
     try {
       if (isSolo && user) {
         const displayName = user.email?.split('@')[0].toUpperCase() || 'NI';
-        setPlayers([{ id: 0, name: displayName, score: 0, time: 0 }]);
+        setPlayers([{ id: 0, name: displayName, score: 0, time: 0, correctAnswers: 0 }]);
       }
       const totalNeeded = (isSolo ? 1 : players.length) * QUESTIONS_PER_PLAYER;
       const poolSource = await ensureLevelWords(difficulty);
@@ -186,6 +292,7 @@ const App: React.FC = () => {
 
       const newPool = generatePoolFromData(totalNeeded, poolSource, statsMap);
       setQuestionPool(newPool);
+      pendingDailyAnswersRef.current = [];
       setCurrentPlayerIndex(0);
       setCurrentQuestionIndex(0);
       setStatus(GameStatus.INTERMISSION);
@@ -193,6 +300,49 @@ const App: React.FC = () => {
       setIsLoadingWords(false);
     }
   }, [difficulty, ensureLevelWords, players.length, user]);
+
+  const startDailyCompetition = useCallback(async () => {
+    if (!user) return;
+    const today = toDateOnly(new Date());
+    const alreadyPlayed = await hasPlayedDailyChallenge(user.id, today);
+    if (alreadyPlayed) {
+      setHasPlayedToday(true);
+      alert('Gaurko lehiaketa jada jokatu duzu.');
+      return;
+    }
+
+    setGameMode('daily');
+    setIsLoadingWords(true);
+    try {
+      const allWords = await fetchAllActiveWords();
+      if (!allWords.length) {
+        alert('Ez dago lehiaketarako hitzik eskuragarri.');
+        return;
+      }
+
+      const displayName = user.email?.split('@')[0].toUpperCase() || 'NI';
+      setPlayers([
+        {
+          id: 0,
+          name: displayName,
+          score: 0,
+          time: 0,
+          correctAnswers: 0,
+        },
+      ]);
+
+      const pool = generatePoolFromData(DAILY_QUESTIONS, allWords);
+      setQuestionPool(pool);
+      setCurrentPlayerIndex(0);
+      setCurrentQuestionIndex(0);
+      setSelectedAnswer(null);
+      setIsAnswered(false);
+      pendingDailyAnswersRef.current = [];
+      setStatus(GameStatus.INTERMISSION);
+    } finally {
+      setIsLoadingWords(false);
+    }
+  }, [user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,7 +360,9 @@ const App: React.FC = () => {
 
   const startPlayerTurn = () => {
     turnStartTimeRef.current = Date.now();
-    setCurrentTurnPenalties(0);
+    questionStartTimeRef.current = Date.now();
+    pendingDailyAnswersRef.current = [];
+    setCurrentAnswerBonus(0);
     setStatus(GameStatus.PLAYING);
     setCurrentQuestionIndex(0);
     setIsAnswered(false);
@@ -227,11 +379,16 @@ const App: React.FC = () => {
     const currentQuestion = questionPool[poolIdx];
     if (!currentQuestion) return;
 
+    const answerTimeSeconds = (Date.now() - questionStartTimeRef.current) / 1000;
+    const responseMs = Math.max(1, Math.round(answerTimeSeconds * 1000));
     const isCorrect = answer === currentQuestion.correctAnswer;
+    const bonus = isCorrect ? getTimeBonus(answerTimeSeconds) : 0;
+    const earnedPoints = isCorrect ? BASE_POINTS_PER_CORRECT + bonus : 0;
     setSelectedAnswer(answer);
     setIsAnswered(true);
+    setCurrentAnswerBonus(bonus);
 
-    if (user) {
+    if (user && gameMode === 'regular') {
       void insertGameAnswer({
         userId: user.id,
         difficulty,
@@ -241,16 +398,33 @@ const App: React.FC = () => {
       });
     }
 
+    if (gameMode === 'daily') {
+      pendingDailyAnswersRef.current.push({
+        questionIndex: currentQuestionIndex,
+        sourceId: String(currentQuestion.wordData.id),
+        hitza: currentQuestion.wordData.hitza,
+        chosen: answer,
+        correct: currentQuestion.correctAnswer,
+        isCorrect,
+        responseMs,
+        points: earnedPoints,
+      });
+    }
+
     if (isCorrect) {
-      setPlayers(prev => prev.map((p, idx) => idx === currentPlayerIndex ? { ...p, score: p.score + 1 } : p));
-    } else {
-      setCurrentTurnPenalties(prev => prev + 10);
+      setPlayers(prev => prev.map((p, idx) => idx === currentPlayerIndex ? {
+        ...p,
+        score: p.score + earnedPoints,
+        correctAnswers: p.correctAnswers + 1,
+      } : p));
     }
   };
 
   const nextQuestion = () => {
     if (currentQuestionIndex < QUESTIONS_PER_PLAYER - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
+      questionStartTimeRef.current = Date.now();
+      setCurrentAnswerBonus(0);
       setIsAnswered(false);
       setSelectedAnswer(null);
     } else {
@@ -262,15 +436,34 @@ const App: React.FC = () => {
     if (!user) return;
     setIsSaving(true);
     try {
-      await insertGameRun({
-        userId: user.id,
-        difficulty,
-        total: QUESTIONS_PER_PLAYER,
-        correct: player.score,
-        wrong: QUESTIONS_PER_PLAYER - player.score,
-        timeSeconds: player.time,
-      });
-      await Promise.all([fetchHistory(), refreshFailedStats()]);
+      if (gameMode === 'daily') {
+        const today = toDateOnly(new Date());
+        const result = await saveDailyChallengeRun({
+          userId: user.id,
+          playerName: player.name,
+          challengeDate: today,
+          score: player.score,
+          correct: player.correctAnswers,
+          wrong: DAILY_QUESTIONS - player.correctAnswers,
+          total: DAILY_QUESTIONS,
+          timeSeconds: player.time,
+          answers: pendingDailyAnswersRef.current,
+        });
+        if (!result.ok && result.reason === 'already_played') {
+          alert('Gaurko lehiaketa jada erregistratuta dago.');
+        }
+        await refreshCompetitionData();
+      } else {
+        await insertGameRun({
+          userId: user.id,
+          difficulty,
+          total: QUESTIONS_PER_PLAYER,
+          correct: player.correctAnswers,
+          wrong: QUESTIONS_PER_PLAYER - player.correctAnswers,
+          timeSeconds: player.time,
+        });
+        await Promise.all([fetchHistory(), refreshFailedStats()]);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -279,8 +472,7 @@ const App: React.FC = () => {
   const finishPlayerTurn = async () => {
     const endTime = Date.now();
     const realSeconds = (endTime - turnStartTimeRef.current) / 1000;
-    const totalSecondsWithPenalty = realSeconds + currentTurnPenalties;
-    const updatedPlayers = players.map((p, idx) => idx === currentPlayerIndex ? { ...p, time: totalSecondsWithPenalty } : p);
+    const updatedPlayers = players.map((p, idx) => idx === currentPlayerIndex ? { ...p, time: realSeconds } : p);
     setPlayers(updatedPlayers);
 
     if (currentPlayerIndex < players.length - 1) {
@@ -364,6 +556,7 @@ const App: React.FC = () => {
           <div className="flex p-1 bg-slate-100 rounded-2xl mb-6 shrink-0">
             <button onClick={() => setActiveTab('bilatu')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'bilatu' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Bilatu</button>
             <button onClick={() => setActiveTab('historia')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'historia' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Historia</button>
+            <button onClick={() => setActiveTab('lehiaketa')} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'lehiaketa' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Lehiaketa</button>
           </div>
 
           <div className="grow overflow-hidden flex flex-col">
@@ -428,7 +621,7 @@ const App: React.FC = () => {
                   ))}
                 </div>
               </>
-            ) : (
+            ) : activeTab === 'historia' ? (
               <>
                 <div className="flex justify-center gap-4 mb-4 shrink-0">
                   {['gaur', 'datuak', 'hutsak'].map(t => (
@@ -484,14 +677,117 @@ const App: React.FC = () => {
                   )}
                 </div>
               </>
+            ) : (
+              <div className="grow overflow-y-auto custom-scrollbar pr-1 space-y-4">
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gaurko Lehiaketa</p>
+                      <p className="text-sm font-black text-indigo-950 uppercase">10 Sinonimo (maila guztiak)</p>
+                    </div>
+                    <button
+                      onClick={() => void startDailyCompetition()}
+                      disabled={isLoadingWords || hasPlayedToday}
+                      className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${hasPlayedToday ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white'}`}
+                    >
+                      {hasPlayedToday ? 'GAUR JOKATUTA' : isLoadingWords ? 'KARGATZEN...' : 'JOLASTU'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                  <div className="flex gap-2 mb-3">
+                    <button onClick={() => setCompetitionPeriod('daily')} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase ${competitionPeriod === 'daily' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>Gaur</button>
+                    <button onClick={() => setCompetitionPeriod('weekly')} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase ${competitionPeriod === 'weekly' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>Astea</button>
+                    <button onClick={() => setCompetitionPeriod('monthly')} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase ${competitionPeriod === 'monthly' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>Hilabetea</button>
+                  </div>
+
+                  {isLoadingCompetition ? (
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Kargatzen...</p>
+                  ) : competitionPeriod === 'daily' ? (
+                    dailyLeaderboard.length === 0 ? (
+                      <p className="text-[10px] font-black text-slate-300 uppercase">Oraindik ez dago emaitzarik.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {dailyLeaderboard.map((entry) => (
+                          <div key={entry.id} className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs font-black text-indigo-950 uppercase">#{entry.rank} {entry.player_name}</p>
+                              <p className="text-[10px] font-black text-slate-400 uppercase">{entry.correct}/{entry.total} - {entry.time_seconds.toFixed(1)}s</p>
+                            </div>
+                            <span className="text-lg font-black text-indigo-600">{entry.score}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      {(competitionPeriod === 'weekly' ? weeklyLeaderboard : monthlyLeaderboard).length === 0 ? (
+                        <p className="text-[10px] font-black text-slate-300 uppercase">Oraindik ez dago emaitzarik.</p>
+                      ) : (
+                        (competitionPeriod === 'weekly' ? weeklyLeaderboard : monthlyLeaderboard).map((entry) => (
+                          <div key={entry.user_id} className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs font-black text-indigo-950 uppercase">#{entry.rank} {entry.player_name}</p>
+                              <p className="text-[10px] font-black text-slate-400 uppercase">{entry.games_played} partida - {entry.total_correct}/{entry.total_questions}</p>
+                            </div>
+                            <span className="text-lg font-black text-indigo-600">{entry.total_score}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Partidak eta Erantzunak</span>
+                    <input type="date" value={competitionDate} onChange={e => setCompetitionDate(e.target.value)} className="text-[11px] font-black bg-white border border-slate-200 rounded-lg p-2 text-indigo-600 outline-none" />
+                  </div>
+                  {dailyRunsByDate.length === 0 ? (
+                    <p className="text-[10px] font-black text-slate-300 uppercase">Egun honetarako ez dago partidarik.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {dailyRunsByDate.map((run) => (
+                        <details key={run.id} className="bg-white border border-slate-100 rounded-xl p-3">
+                          <summary className="cursor-pointer list-none flex items-center justify-between">
+                            <span className="text-xs font-black text-indigo-950 uppercase">{run.player_name}</span>
+                            <span className="text-[11px] font-black text-indigo-600">{run.score} pts</span>
+                          </summary>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase">{run.correct}/{run.total} - {run.time_seconds.toFixed(1)}s</p>
+                            {run.answers.map((ans) => (
+                              <div key={`${run.id}-${ans.question_index}`} className="text-[11px] font-bold text-slate-600 bg-slate-50 rounded-lg px-2 py-1">
+                                #{ans.question_index + 1} {ans.hitza}: {ans.chosen} {ans.is_correct ? '✓' : `✗ (${ans.correct})`} [{ans.points} pts]
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
           <div className="mt-6 shrink-0 pt-4 border-t border-slate-100">
-            <div className="flex flex-col gap-2"><label className="text-[10px] font-black text-slate-400 uppercase text-center">Maila Aldatu</label>
-              <div className="flex gap-2">{[1, 2, 3, 4].map(d => <button key={d} onClick={() => setDifficulty(d as DifficultyLevel)} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${difficulty === d ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>L{d}</button>)}</div>
-            </div>
-            <button onClick={() => startNewGame(true)} disabled={isLoadingWords} className="w-full bg-indigo-600 text-white font-black py-5 rounded-3xl shadow-lg mt-4 active:scale-95 text-xl uppercase tracking-widest">{isLoadingWords ? "KARGATZEN..." : "BAKARKA JOLASTU"}</button>
+            {activeTab === 'lehiaketa' ? (
+              <button
+                onClick={() => void refreshCompetitionData()}
+                disabled={isLoadingCompetition}
+                className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-lg uppercase text-xs active:scale-95"
+              >
+                {isLoadingCompetition ? 'KARGATZEN...' : 'Sailkapena Freskatu'}
+              </button>
+            ) : (
+              <>
+                <div className="flex flex-col gap-2"><label className="text-[10px] font-black text-slate-400 uppercase text-center">Maila Aldatu</label>
+                  <div className="flex gap-2">{[1, 2, 3, 4].map(d => <button key={d} onClick={() => setDifficulty(d as DifficultyLevel)} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${difficulty === d ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>L{d}</button>)}</div>
+                </div>
+                <button onClick={() => startNewGame(true)} disabled={isLoadingWords} className="w-full bg-indigo-600 text-white font-black py-5 rounded-3xl shadow-lg mt-4 active:scale-95 text-xl uppercase tracking-widest">{isLoadingWords ? "KARGATZEN..." : "BAKARKA JOLASTU"}</button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -545,7 +841,7 @@ const App: React.FC = () => {
     return (
       <PlayingScreen
         playerName={player.name}
-        currentTurnPenalties={currentTurnPenalties}
+        currentAnswerBonus={currentAnswerBonus}
         currentQuestionIndex={currentQuestionIndex}
         currentQuestion={currentQuestion}
         isAnswered={isAnswered}
@@ -560,12 +856,13 @@ const App: React.FC = () => {
     const isSoloLoggedIn = user && players.length === 1;
     const player = players[0];
     const score = player?.score || 0;
-    const percentage = (score / 10) * 100;
+    const totalQuestions = gameMode === 'daily' ? DAILY_QUESTIONS : QUESTIONS_PER_PLAYER;
+    const percentage = ((player?.correctAnswers || 0) / totalQuestions) * 100;
     const sortedPlayers = [...players].filter(p => p.time > 0).sort((a,b) => b.score === a.score ? a.time - b.time : b.score - a.score);
     return (
       <div className="h-[100dvh] w-full flex flex-col items-center bg-indigo-950 safe-pt safe-px overflow-hidden">
         <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl p-6 md:p-8 flex flex-col h-full max-h-[92dvh] border-t-[12px] border-indigo-600 mt-2 mb-6 overflow-hidden">
-          <h2 className="text-3xl font-black text-slate-900 uppercase text-center mb-6">{isSoloLoggedIn ? "Zure Emaitzak" : "Sailkapena"}</h2>
+          <h2 className="text-3xl font-black text-slate-900 uppercase text-center mb-6">{isSoloLoggedIn ? (gameMode === 'daily' ? "Eguneko Lehiaketa" : "Zure Emaitzak") : "Sailkapena"}</h2>
           <div className="grow overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-50/50 mb-6 flex flex-col">
             {isSoloLoggedIn ? (
               <div className="h-full flex flex-col items-center justify-center p-4 space-y-6">
@@ -574,8 +871,8 @@ const App: React.FC = () => {
                    <div className="absolute text-center"><span className="text-3xl font-black text-indigo-950">{percentage.toFixed(0)}%</span></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-center">
-                  <div className="bg-white p-4 rounded-3xl border border-emerald-100"><p className="text-[9px] font-black uppercase text-emerald-400">Asmatuak</p><p className="text-2xl font-black text-emerald-600">{score}</p></div>
-                  <div className="bg-white p-4 rounded-3xl border border-rose-100"><p className="text-[9px] font-black uppercase text-rose-400">Hutsak</p><p className="text-2xl font-black text-rose-600">{10 - score}</p></div>
+                  <div className="bg-white p-4 rounded-3xl border border-emerald-100"><p className="text-[9px] font-black uppercase text-emerald-400">Puntuak</p><p className="text-2xl font-black text-emerald-600">{score}</p></div>
+                  <div className="bg-white p-4 rounded-3xl border border-rose-100"><p className="text-[9px] font-black uppercase text-rose-400">Asmatuak</p><p className="text-2xl font-black text-rose-600">{player.correctAnswers}</p></div>
                   <div className="bg-white p-4 rounded-3xl border border-indigo-100 col-span-2"><p className="text-[9px] font-black uppercase text-indigo-400">Denbora Totala</p><p className="text-2xl font-black text-indigo-950">{player.time.toFixed(1)}s</p></div>
                 </div>
               </div>
@@ -592,7 +889,14 @@ const App: React.FC = () => {
           </div>
           <div className="flex flex-col gap-2 shrink-0">
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => { setPlayers(players.map(p => ({...p, score:0, time:0}))); startNewGame(players.length === 1); }} className="bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-lg uppercase text-xs active:scale-95">Berriro</button>
+              <button onClick={() => {
+                if (gameMode === 'daily') {
+                  setStatus(user ? GameStatus.CONTRIBUTE : GameStatus.SETUP);
+                  return;
+                }
+                setPlayers(players.map(p => ({...p, score:0, time:0, correctAnswers:0})));
+                startNewGame(players.length === 1);
+              }} className={`font-black py-4 rounded-2xl shadow-lg uppercase text-xs active:scale-95 ${gameMode === 'daily' ? 'bg-slate-200 text-slate-500' : 'bg-indigo-600 text-white'}`}>{gameMode === 'daily' ? "Bihar berriro" : "Berriro"}</button>
               <button onClick={() => setStatus(GameStatus.REVIEW)} className="bg-white text-indigo-600 font-black py-4 rounded-2xl shadow-md uppercase text-xs border border-indigo-100 active:scale-95">Hitzak</button>
             </div>
             <button onClick={() => setStatus(user ? GameStatus.CONTRIBUTE : GameStatus.SETUP)} className="w-full bg-slate-100 text-slate-500 font-black py-3 rounded-xl uppercase text-[10px] active:scale-95">Hasiera</button>

@@ -1,5 +1,13 @@
 import { DifficultyLevel, Question, WordData } from '../types';
-import { GameAnswerRow, GameRun, FailedWordStat, SearchResultItem } from '../appTypes';
+import {
+  DailyLeaderboardEntry,
+  DailyRunWithAnswers,
+  GameAnswerRow,
+  GameRun,
+  FailedWordStat,
+  PeriodLeaderboardEntry,
+  SearchResultItem,
+} from '../appTypes';
 import { supabase } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
 
@@ -35,6 +43,29 @@ export const fetchWordsByLevel = async (
     .from('syn_words')
     .select('source_id, hitza, sinonimoak')
     .eq('level', level)
+    .eq('active', true);
+
+  if (error) return [];
+
+  const rows = (data ?? []) as Array<{
+    source_id: string | number;
+    hitza: string;
+    sinonimoak: unknown;
+  }>;
+
+  return rows
+    .map((r) => ({
+      id: r.source_id,
+      hitza: r.hitza,
+      sinonimoak: normalizeSynonyms(r.sinonimoak),
+    }))
+    .filter((w) => w.hitza && w.sinonimoak.length > 0);
+};
+
+export const fetchAllActiveWords = async (): Promise<WordData[]> => {
+  const { data, error } = await supabase
+    .from('syn_words')
+    .select('source_id, hitza, sinonimoak')
     .eq('active', true);
 
   if (error) return [];
@@ -145,4 +176,247 @@ export const insertGameRun = async (params: {
     wrong,
     time_seconds: timeSeconds,
   });
+};
+
+type DailyRunRow = {
+  id: string;
+  user_id: string;
+  player_name: string;
+  challenge_date: string;
+  played_at: string;
+  score: number;
+  correct: number;
+  wrong: number;
+  total: number;
+  time_seconds: number;
+};
+
+type DailyAnswerRow = {
+  run_id: string;
+  question_index: number;
+  source_id: string;
+  hitza: string;
+  chosen: string;
+  correct: string;
+  is_correct: boolean;
+  response_ms: number;
+  points: number;
+};
+
+const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
+  rows: T[]
+): T[] =>
+  [...rows].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.time_seconds - b.time_seconds;
+  });
+
+export const hasPlayedDailyChallenge = async (
+  userId: string,
+  challengeDate: string
+): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('daily_challenge_runs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('challenge_date', challengeDate)
+    .limit(1);
+
+  if (error) return false;
+  return (data ?? []).length > 0;
+};
+
+export const saveDailyChallengeRun = async (params: {
+  userId: string;
+  playerName: string;
+  challengeDate: string;
+  score: number;
+  correct: number;
+  wrong: number;
+  total: number;
+  timeSeconds: number;
+  answers: Array<{
+    questionIndex: number;
+    sourceId: string;
+    hitza: string;
+    chosen: string;
+    correct: string;
+    isCorrect: boolean;
+    responseMs: number;
+    points: number;
+  }>;
+}): Promise<{ ok: boolean; reason?: 'already_played' | 'error' }> => {
+  const {
+    userId,
+    playerName,
+    challengeDate,
+    score,
+    correct,
+    wrong,
+    total,
+    timeSeconds,
+    answers,
+  } = params;
+
+  const { data: runData, error: runError } = await supabase
+    .from('daily_challenge_runs')
+    .insert({
+      user_id: userId,
+      player_name: playerName,
+      challenge_date: challengeDate,
+      played_at: new Date().toISOString(),
+      score,
+      correct,
+      wrong,
+      total,
+      time_seconds: timeSeconds,
+    })
+    .select('id')
+    .single();
+
+  if (runError) {
+    const errorCode = (runError as { code?: string }).code;
+    if (errorCode === '23505') return { ok: false, reason: 'already_played' };
+    return { ok: false, reason: 'error' };
+  }
+
+  const runId = (runData as { id: string }).id;
+  if (answers.length === 0) return { ok: true };
+
+  const answerRows = answers.map((a) => ({
+    run_id: runId,
+    question_index: a.questionIndex,
+    source_id: a.sourceId,
+    hitza: a.hitza,
+    chosen: a.chosen,
+    correct: a.correct,
+    is_correct: a.isCorrect,
+    response_ms: a.responseMs,
+    points: a.points,
+  }));
+
+  const { error: answersError } = await supabase
+    .from('daily_challenge_answers')
+    .insert(answerRows);
+
+  if (answersError) return { ok: false, reason: 'error' };
+  return { ok: true };
+};
+
+export const fetchDailyLeaderboard = async (
+  challengeDate: string
+): Promise<DailyLeaderboardEntry[]> => {
+  const { data, error } = await supabase
+    .from('daily_challenge_runs')
+    .select(
+      'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+    )
+    .eq('challenge_date', challengeDate);
+
+  if (error || !data) return [];
+  const sorted = sortLeaderboardRows(data as DailyRunRow[]);
+  return sorted.map((row, idx) => ({ ...row, rank: idx + 1 }));
+};
+
+export const fetchPeriodLeaderboard = async (params: {
+  startIso: string;
+  endIso: string;
+}): Promise<PeriodLeaderboardEntry[]> => {
+  const { startIso, endIso } = params;
+  const { data, error } = await supabase
+    .from('daily_challenge_runs')
+    .select(
+      'user_id, player_name, score, correct, total, time_seconds, played_at'
+    )
+    .gte('played_at', startIso)
+    .lt('played_at', endIso);
+
+  if (error || !data) return [];
+
+  const agg = new Map<
+    string,
+    {
+      user_id: string;
+      player_name: string;
+      games_played: number;
+      total_score: number;
+      total_correct: number;
+      total_questions: number;
+      total_time_seconds: number;
+    }
+  >();
+
+  for (const row of data as Array<{
+    user_id: string;
+    player_name: string;
+    score: number;
+    correct: number;
+    total: number;
+    time_seconds: number;
+  }>) {
+    const cur = agg.get(row.user_id) || {
+      user_id: row.user_id,
+      player_name: row.player_name,
+      games_played: 0,
+      total_score: 0,
+      total_correct: 0,
+      total_questions: 0,
+      total_time_seconds: 0,
+    };
+    cur.games_played += 1;
+    cur.total_score += row.score;
+    cur.total_correct += row.correct;
+    cur.total_questions += row.total;
+    cur.total_time_seconds += row.time_seconds;
+    cur.player_name = row.player_name || cur.player_name;
+    agg.set(row.user_id, cur);
+  }
+
+  const sorted = Array.from(agg.values()).sort((a, b) => {
+    if (b.total_score !== a.total_score) return b.total_score - a.total_score;
+    return a.total_time_seconds - b.total_time_seconds;
+  });
+
+  return sorted.map((row, idx) => ({ ...row, rank: idx + 1 }));
+};
+
+export const fetchDailyRunsWithAnswersByDate = async (
+  challengeDate: string
+): Promise<DailyRunWithAnswers[]> => {
+  const { data: runsData, error: runsError } = await supabase
+    .from('daily_challenge_runs')
+    .select(
+      'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+    )
+    .eq('challenge_date', challengeDate);
+
+  if (runsError || !runsData) return [];
+
+  const runs = sortLeaderboardRows(runsData as DailyRunRow[]);
+  if (runs.length === 0) return [];
+
+  const runIds = runs.map((r) => r.id);
+  const { data: answersData, error: answersError } = await supabase
+    .from('daily_challenge_answers')
+    .select(
+      'run_id, question_index, source_id, hitza, chosen, correct, is_correct, response_ms, points'
+    )
+    .in('run_id', runIds)
+    .order('question_index', { ascending: true });
+
+  if (answersError) {
+    return runs.map((run) => ({ ...run, answers: [] }));
+  }
+
+  const answersByRun = new Map<string, DailyAnswerRow[]>();
+  for (const answer of (answersData ?? []) as DailyAnswerRow[]) {
+    const list = answersByRun.get(answer.run_id) || [];
+    list.push(answer);
+    answersByRun.set(answer.run_id, list);
+  }
+
+  return runs.map((run) => ({
+    ...run,
+    answers: answersByRun.get(run.id) || [],
+  }));
 };
