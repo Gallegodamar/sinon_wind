@@ -10,6 +10,7 @@ import {
 } from '../appTypes';
 import { supabase } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
+import { getLocalDayUtcRange } from './dateUtils';
 
 export const searchWords = async (term: string): Promise<SearchResultItem[]> => {
   const { data, error } = await supabase
@@ -212,14 +213,15 @@ const sortLeaderboardRows = <T extends { score: number; time_seconds: number }>(
   });
 
 export const hasPlayedDailyChallenge = async (
-  userId: string,
-  challengeDate: string
+  userId: string
 ): Promise<boolean> => {
+  const { startIso, endIso } = getLocalDayUtcRange();
   const { data, error } = await supabase
     .from('daily_challenge_runs')
     .select('id')
     .eq('user_id', userId)
-    .eq('challenge_date', challengeDate)
+    .gte('played_at', startIso)
+    .lt('played_at', endIso)
     .limit(1);
 
   if (error) return false;

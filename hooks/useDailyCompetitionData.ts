@@ -49,7 +49,7 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
     try {
       const today = formatLocalDate(new Date());
       const [playedToday, daily, weekly, monthly, runsByDate] = await Promise.all([
-        hasPlayedDailyChallenge(userId, today),
+        hasPlayedDailyChallenge(userId),
         fetchDailyLeaderboard(today),
         fetchPeriodLeaderboard(getCurrentWeekRange()),
         fetchPeriodLeaderboard(getCurrentMonthRange()),

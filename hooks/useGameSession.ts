@@ -120,8 +120,7 @@ export const useGameSession = ({
 
   const startDailyCompetition = useCallback(async () => {
     if (!user) return;
-    const today = formatLocalDate(new Date());
-    const alreadyPlayed = await hasPlayedDailyChallenge(user.id, today);
+    const alreadyPlayed = await hasPlayedDailyChallenge(user.id);
     if (alreadyPlayed) {
       setHasPlayedToday(true);
       alert('Gaurko lehiaketa jada jokatu duzu.');

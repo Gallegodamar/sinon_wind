@@ -24,3 +24,11 @@ export const getCurrentMonthRange = () => {
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return { startIso: start.toISOString(), endIso: end.toISOString() };
 };
+
+export const getLocalDayUtcRange = (date: Date = new Date()) => {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+};
