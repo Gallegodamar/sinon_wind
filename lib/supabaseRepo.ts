@@ -231,16 +231,12 @@ export const hasPlayedDailyChallenge = async (
   userId: string,
   challengeDate: string
 ): Promise<boolean> => {
-  const { data, error } = await supabase
+  const { data: byChallengeDate, error: byChallengeDateError } = await supabase
     .from('daily_challenge_runs')
     .select('id')
     .eq('user_id', userId)
     .eq('challenge_date', challengeDate)
     .limit(1);
-
-  if (!error) return (data ?? []).length > 0;
-
-  // Backward-compatible fallback if challenge_date lookup fails unexpectedly.
   const { startIso, endIso } = getLocalDayUtcRange();
   const { data: byPlayedAt, error: byPlayedAtError } = await supabase
     .from('daily_challenge_runs')
@@ -249,9 +245,8 @@ export const hasPlayedDailyChallenge = async (
     .gte('played_at', startIso)
     .lt('played_at', endIso)
     .limit(1);
-
-  if (byPlayedAtError) return false;
-  return (byPlayedAt ?? []).length > 0;
+  if (byChallengeDateError && byPlayedAtError) return false;
+  return (byChallengeDate ?? []).length > 0 || (byPlayedAt ?? []).length > 0;
 };
 
 export const saveDailyChallengeRun = async (params: {
@@ -285,6 +280,8 @@ export const saveDailyChallengeRun = async (params: {
     timeSeconds,
     answers,
   } = params;
+  const alreadyPlayed = await hasPlayedDailyChallenge(userId, challengeDate);
+  if (alreadyPlayed) return { ok: false, reason: 'already_played' };
 
   const { data: runData, error: runError } = await supabase
     .from('daily_challenge_runs')
@@ -340,9 +337,21 @@ export const fetchDailyLeaderboard = async (
       'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
     )
     .eq('challenge_date', challengeDate);
-
-  if (error || !data) return [];
-  const sorted = sortLeaderboardRows(data as DailyRunRow[]);
+  let rows = error || !data ? [] : (data as DailyRunRow[]);
+  if (rows.length === 0) {
+    const { startIso, endIso } = getLocalDayUtcRange();
+    const { data: byPlayedAt, error: byPlayedAtError } = await supabase
+      .from('daily_challenge_runs')
+      .select(
+        'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+      )
+      .gte('played_at', startIso)
+      .lt('played_at', endIso);
+    if (!byPlayedAtError && byPlayedAt) {
+      rows = byPlayedAt as DailyRunRow[];
+    }
+  }
+  const sorted = sortLeaderboardRows(rows);
   return sorted.map((row, idx) => ({ ...row, rank: idx + 1 }));
 };
 
@@ -417,10 +426,22 @@ export const fetchDailyRunsWithAnswersByDate = async (
       'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
     )
     .eq('challenge_date', challengeDate);
-
-  if (runsError || !runsData) return [];
-
-  const runs = sortLeaderboardRows(runsData as DailyRunRow[]);
+  let runs = sortLeaderboardRows(
+    (runsError || !runsData ? [] : (runsData as DailyRunRow[]))
+  );
+  if (runs.length === 0) {
+    const { startIso, endIso } = getLocalDayUtcRange();
+    const { data: byPlayedAt, error: byPlayedAtError } = await supabase
+      .from('daily_challenge_runs')
+      .select(
+        'id, user_id, player_name, challenge_date, played_at, score, correct, wrong, total, time_seconds'
+      )
+      .gte('played_at', startIso)
+      .lt('played_at', endIso);
+    if (!byPlayedAtError && byPlayedAt) {
+      runs = sortLeaderboardRows(byPlayedAt as DailyRunRow[]);
+    }
+  }
   if (runs.length === 0) return [];
 
   const runIds = runs.map((r) => r.id);

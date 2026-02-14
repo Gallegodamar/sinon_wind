@@ -164,6 +164,7 @@ const App: React.FC = () => {
     ensureLevelWords,
     fetchMostFailedWords,
     setStatus,
+    setHasPlayedToday,
     refreshCompetitionData,
   });
   const isWordsBusy = isLoadingWords || isLoadingWordCache;
@@ -276,7 +277,13 @@ const App: React.FC = () => {
         selectedAnswer={selectedAnswer}
         onAnswer={handleAnswer}
         onNextQuestion={nextQuestion}
-        onExit={() => setStatus(GameStatus.SUMMARY)}
+        onExit={() => {
+          if (gameMode === 'daily') {
+            alert('Eguneko jokoa gordetzeko, amaitu 10 galderak.');
+            return;
+          }
+          setStatus(GameStatus.SUMMARY);
+        }}
       />
     );
   }

@@ -4,6 +4,7 @@ import { DifficultyLevel, GameStatus, Player, Question, WordData } from '../type
 import { generatePoolFromData } from '../lib/gameLogic';
 import {
   fetchAllActiveWords,
+  hasPlayedDailyChallenge,
   insertGameAnswer,
   insertGameRun,
   resolveActiveChallengeDate,
@@ -42,6 +43,7 @@ type Params = {
   ensureLevelWords: (level: DifficultyLevel) => Promise<WordData[]>;
   fetchMostFailedWords: () => Promise<FailedWordStat[]>;
   setStatus: (status: GameStatus) => void;
+  setHasPlayedToday: (value: boolean) => void;
   refreshCompetitionData: () => Promise<void>;
 };
 
@@ -53,6 +55,7 @@ export const useGameSession = ({
   ensureLevelWords,
   fetchMostFailedWords,
   setStatus,
+  setHasPlayedToday,
   refreshCompetitionData,
 }: Params) => {
   const [gameMode, setGameMode] = useState<GameMode>('regular');
@@ -117,6 +120,14 @@ export const useGameSession = ({
 
   const startDailyCompetition = useCallback(async () => {
     if (!user) return;
+    const challengeDate = await resolveActiveChallengeDate();
+    const alreadyPlayed = await hasPlayedDailyChallenge(user.id, challengeDate);
+    if (alreadyPlayed) {
+      setHasPlayedToday(true);
+      alert('Gaurko lehiaketa jada jokatu duzu.');
+      return;
+    }
+
     setGameMode('daily');
     setIsLoadingWords(true);
     try {
@@ -148,7 +159,7 @@ export const useGameSession = ({
     } finally {
       setIsLoadingWords(false);
     }
-  }, [setPlayers, setStatus, user]);
+  }, [setHasPlayedToday, setPlayers, setStatus, user]);
 
   const startPlayerTurn = () => {
     turnStartTimeRef.current = Date.now();
@@ -237,7 +248,12 @@ export const useGameSession = ({
             answers: pendingDailyAnswersRef.current,
           });
           if (!result.ok && result.reason === 'already_played') {
+            setHasPlayedToday(true);
             alert('Gaurko lehiaketa jada erregistratuta dago.');
+          } else if (!result.ok) {
+            alert('Ezin izan da eguneko partida gorde. Saiatu berriro.');
+          } else {
+            setHasPlayedToday(true);
           }
           await refreshCompetitionData();
         } else {
@@ -254,7 +270,7 @@ export const useGameSession = ({
         setIsSaving(false);
       }
     },
-    [difficulty, gameMode, refreshCompetitionData, user]
+    [difficulty, gameMode, refreshCompetitionData, setHasPlayedToday, user]
   );
 
   const finishPlayerTurn = useCallback(async () => {
