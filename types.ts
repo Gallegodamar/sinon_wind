@@ -10,6 +10,7 @@ export interface Player {
   name: string;
   score: number;
   time: number;
+  correctAnswers: number;
 }
 
 export interface Question {

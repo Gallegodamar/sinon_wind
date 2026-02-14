@@ -3,7 +3,7 @@ import { Question } from '../../types';
 
 type PlayingScreenProps = {
   playerName: string;
-  currentTurnPenalties: number;
+  currentAnswerBonus: number;
   currentQuestionIndex: number;
   currentQuestion: Question;
   isAnswered: boolean;
@@ -15,7 +15,7 @@ type PlayingScreenProps = {
 
 export const PlayingScreen: React.FC<PlayingScreenProps> = ({
   playerName,
-  currentTurnPenalties,
+  currentAnswerBonus,
   currentQuestionIndex,
   currentQuestion,
   isAnswered,
@@ -32,7 +32,7 @@ export const PlayingScreen: React.FC<PlayingScreenProps> = ({
             {playerName}
           </span>
           <span className="text-[10px] font-black text-rose-400">
-            +{currentTurnPenalties}s
+            +{currentAnswerBonus} pts
           </span>
         </div>
         <div className="flex items-center gap-2">

@@ -18,3 +18,10 @@ View your app in AI Studio: https://ai.studio/apps/drive/1Go06sT8ttOgxCZ7xzx8oc9
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Daily Competition setup
+
+Run `supabase_daily_competition.sql` in your Supabase SQL editor to create:
+- `daily_challenge_runs`
+- `daily_challenge_answers`
+- indexes + RLS policies
