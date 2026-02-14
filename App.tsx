@@ -62,6 +62,7 @@ const App: React.FC = () => {
     hasPlayedToday,
     setHasPlayedToday,
     isLoadingCompetition,
+    competitionError,
     refreshCompetitionData,
   } = useDailyCompetitionData({
     userId: user?.id,
@@ -218,6 +219,7 @@ const App: React.FC = () => {
         isLoadingWords={isWordsBusy}
         hasPlayedToday={hasPlayedToday}
         isLoadingCompetition={isLoadingCompetition}
+        competitionError={competitionError}
         dailyLeaderboard={dailyLeaderboard}
         competitionPeriod={competitionPeriod}
         setCompetitionPeriod={setCompetitionPeriod}

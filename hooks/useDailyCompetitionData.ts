@@ -12,6 +12,7 @@ import {
   hasPlayedDailyChallenge,
   resolveActiveChallengeDate,
 } from '../lib/supabaseRepo';
+import { supabase } from '../supabase';
 import {
   formatLocalDate,
   getCurrentMonthRange,
@@ -43,6 +44,7 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
   );
   const [hasPlayedToday, setHasPlayedToday] = useState(false);
   const [isLoadingCompetition, setIsLoadingCompetition] = useState(false);
+  const [competitionError, setCompetitionError] = useState<string | null>(null);
   const [activeChallengeDate, setActiveChallengeDate] = useState<string>(
     formatLocalDate(new Date())
   );
@@ -50,7 +52,18 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
   const refreshCompetitionData = async () => {
     if (!userId) return;
     setIsLoadingCompetition(true);
+    setCompetitionError(null);
     try {
+      const { error: accessError } = await supabase
+        .from('daily_challenge_runs')
+        .select('id', { head: true, count: 'exact' })
+        .limit(1);
+      if (accessError) {
+        setCompetitionError(
+          `Ezin da sailkapena irakurri: ${accessError.message} (${accessError.code ?? 'no_code'})`
+        );
+      }
+
       const today = await resolveActiveChallengeDate();
       setActiveChallengeDate(today);
       const effectiveCompetitionDate = competitionDate > today ? today : competitionDate;
@@ -82,6 +95,7 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
       setWeeklyLeaderboard([]);
       setMonthlyLeaderboard([]);
       setDailyRunsByDate([]);
+      setCompetitionError(null);
       return;
     }
     if (shouldRefresh) {
@@ -102,6 +116,7 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
     hasPlayedToday,
     setHasPlayedToday,
     isLoadingCompetition,
+    competitionError,
     refreshCompetitionData,
   };
 };

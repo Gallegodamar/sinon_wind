@@ -21,6 +21,7 @@ type Props = {
   isLoadingWords: boolean;
   hasPlayedToday: boolean;
   isLoadingCompetition: boolean;
+  competitionError: string | null;
   dailyLeaderboard: DailyLeaderboardEntry[];
   competitionPeriod: LeaderboardPeriod;
   setCompetitionPeriod: (period: LeaderboardPeriod) => void;
@@ -48,6 +49,7 @@ export const ContributeScreen: React.FC<Props> = ({
   isLoadingWords,
   hasPlayedToday,
   isLoadingCompetition,
+  competitionError,
   dailyLeaderboard,
   competitionPeriod,
   setCompetitionPeriod,
@@ -164,6 +166,10 @@ export const ContributeScreen: React.FC<Props> = ({
                 {isLoadingCompetition ? (
                   <p className="text-[10px] font-black text-slate-400 uppercase">
                     Kargatzen...
+                  </p>
+                ) : competitionError ? (
+                  <p className="text-[10px] font-black text-rose-500">
+                    {competitionError}
                   </p>
                 ) : dailyLeaderboard.length === 0 ? (
                   <p className="text-[10px] font-black text-slate-300 uppercase">
@@ -352,6 +358,10 @@ export const ContributeScreen: React.FC<Props> = ({
                 {isLoadingCompetition ? (
                   <p className="text-[10px] font-black text-slate-400 uppercase">
                     Kargatzen...
+                  </p>
+                ) : competitionError ? (
+                  <p className="text-[10px] font-black text-rose-500">
+                    {competitionError}
                   </p>
                 ) : competitionPeriod === 'daily' ? (
                   dailyLeaderboard.length === 0 ? (
