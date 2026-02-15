@@ -18,6 +18,36 @@ create table if not exists public.daily_challenge_runs (
   unique (user_id, challenge_date)
 );
 
+-- Migration-safe upgrades for existing installations (older schema).
+alter table public.daily_challenge_runs
+  add column if not exists player_name text;
+update public.daily_challenge_runs
+set player_name = coalesce(nullif(player_name, ''), 'ANON')
+where player_name is null or player_name = '';
+alter table public.daily_challenge_runs
+  alter column player_name set not null;
+
+alter table public.daily_challenge_runs
+  add column if not exists challenge_date date;
+update public.daily_challenge_runs
+set challenge_date = coalesce(challenge_date, (played_at at time zone 'utc')::date)
+where challenge_date is null;
+alter table public.daily_challenge_runs
+  alter column challenge_date set not null;
+
+alter table public.daily_challenge_runs
+  add column if not exists played_at timestamptz default now();
+alter table public.daily_challenge_runs
+  add column if not exists score integer default 0;
+alter table public.daily_challenge_runs
+  add column if not exists correct integer default 0;
+alter table public.daily_challenge_runs
+  add column if not exists wrong integer default 0;
+alter table public.daily_challenge_runs
+  add column if not exists total integer default 10;
+alter table public.daily_challenge_runs
+  add column if not exists time_seconds numeric default 0;
+
 create table if not exists public.daily_challenge_answers (
   id bigint generated always as identity primary key,
   run_id uuid not null references public.daily_challenge_runs(id) on delete cascade,

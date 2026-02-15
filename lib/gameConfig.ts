@@ -1,0 +1,4 @@
+export const QUESTIONS_PER_PLAYER = 10;
+export const DAILY_QUESTIONS = 10;
+export const BASE_POINTS_PER_CORRECT = 10;
+export const FAILED_WORDS_CACHE_TTL_MS = 30_000;

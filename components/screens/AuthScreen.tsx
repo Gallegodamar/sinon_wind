@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppShell } from '../layout/AppShell';
 
 type AuthScreenProps = {
   username: string;
@@ -20,47 +21,65 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onBack,
 }) => {
   return (
-    <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-indigo-950 p-6">
-      <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border-b-8 border-indigo-600">
-        <button
-          onClick={onBack}
-          className="mb-4 text-xs font-black text-slate-400 uppercase tracking-widest"
-        >
-          â† Atzera
-        </button>
-        <h2 className="text-3xl font-black text-indigo-950 mb-1 uppercase tracking-tighter text-center">
-          Saioa hasi
-        </h2>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <input
-            type="text"
-            placeholder="ID"
-            value={username}
-            onChange={(e) => onUsernameChange(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Pasahitza"
-            value={password}
-            onChange={(e) => onPasswordChange(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
-          />
+    <AppShell
+      header={
+        <div className="flex w-full items-center justify-between gap-3">
+          <button onClick={onBack} className="btn-ghost">
+            Atzera
+          </button>
+          <div className="text-center">
+            <h2 className="font-display text-lg font-semibold text-slate-900">
+              Saioa hasi
+            </h2>
+          </div>
+          <div className="w-16" />
+        </div>
+      }
+      contentClassName="flex items-center justify-center"
+    >
+      <section className="surface-card surface-card--muted w-full max-w-lg p-6 md:p-8">
+        <h3 className="display-title mt-2">Sartu</h3>
+
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.09em] text-slate-500">
+              Erabiltzailea
+            </span>
+            <input
+              type="text"
+              placeholder="adib. jokalaria01"
+              value={username}
+              onChange={(e) => onUsernameChange(e.target.value)}
+              className="input-shell"
+              required
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.09em] text-slate-500">
+              Pasahitza
+            </span>
+            <input
+              type="password"
+              placeholder="********"
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              className="input-shell"
+              required
+            />
+          </label>
+
           {authError && (
-            <p className="text-rose-500 text-xs font-bold text-center">
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">
               {authError}
             </p>
           )}
-          <button
-            type="submit"
-            className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all text-lg uppercase tracking-widest"
-          >
-            SARTU
+
+          <button type="submit" className="btn-primary w-full py-3.5 text-sm">
+            Sartu
           </button>
         </form>
-      </div>
-    </div>
+      </section>
+    </AppShell>
   );
 };

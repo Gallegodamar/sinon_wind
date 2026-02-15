@@ -7,8 +7,11 @@ import {
   FailedWordStat,
   PeriodLeaderboardEntry,
   SearchResultItem,
+  DictionaryMeaning,
+  UserAnswerStatRow,
+  OrthographyPoolWord,
 } from '../appTypes';
-import { supabase } from '../supabase';
+import { supabase, supabasePublic } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
 import { formatLocalDate, getLocalDayUtcRange } from './dateUtils';
 
@@ -35,6 +38,446 @@ export const searchWords = async (term: string): Promise<SearchResultItem[]> => 
     sinonimoak: normalizeSynonyms(r.sinonimoak),
     level: r.level,
   }));
+};
+
+const DICTIONARY_WORD_COLUMN_CANDIDATES = [
+  'hitza',
+  'basque',
+  'palabra',
+  'word',
+  'termino',
+  'term',
+  'lemma',
+  'entry',
+  'entrada',
+  'vocablo',
+];
+
+const DICTIONARY_MEANING_COLUMN_CANDIDATES = [
+  'esanahia',
+  'spanish',
+  'significado',
+  'definition',
+  'meaning',
+  'definizioa',
+  'azalpena',
+  'deskribapena',
+  'descripcion',
+  'definicion',
+  'glosa',
+];
+
+let cachedDictionaryWordColumn: string | null = null;
+let cachedDictionaryMeaningColumn: string | null = null;
+let cachedDictionaryTextColumns: string[] | null = null;
+let isDictionaryTableUnavailable = false;
+const invalidDictionaryWordColumns = new Set<string>();
+
+const DICTIONARY_WORD_KEY_HINTS = [
+  'hitz',
+  'basq',
+  'palabr',
+  'word',
+  'term',
+  'lemma',
+  'entrad',
+  'vocabl',
+];
+
+const DICTIONARY_MEANING_KEY_HINTS = [
+  'esanah',
+  'spani',
+  'signific',
+  'defini',
+  'mean',
+  'azalp',
+  'deskrib',
+  'descri',
+  'glosa',
+];
+
+const ORTHOGRAPHY_DICTIONARY_FETCH_LIMIT = 12_000;
+
+const normalizeDictionaryKey = (key: string): string =>
+  key.toLowerCase().replace(/[\s_-]/g, '');
+
+const normalizeOrthographyKey = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+
+const clipText = (value: string, maxLength: number): string => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+};
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const maskWordInClue = (clue: string, word: string): string => {
+  const normalizedWord = word.trim();
+  if (!normalizedWord) return clue;
+
+  let masked = clue;
+  const exactPattern = new RegExp(escapeRegExp(normalizedWord), 'ig');
+  masked = masked.replace(exactPattern, '_____');
+
+  const accentless = normalizedWord
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (accentless && accentless !== normalizedWord) {
+    const accentlessPattern = new RegExp(escapeRegExp(accentless), 'ig');
+    masked = masked.replace(accentlessPattern, '_____');
+  }
+
+  return masked;
+};
+
+const buildSynonymClue = (hitza: string, sinonimoak: string[]): string => {
+  const baseKey = normalizeOrthographyKey(hitza);
+  const candidateSynonyms = Array.from(
+    new Set(
+      sinonimoak
+        .map((synonym) => synonym.trim())
+        .filter(Boolean)
+        .filter((synonym) => normalizeOrthographyKey(synonym) !== baseKey)
+    )
+  );
+
+  if (candidateSynonyms.length === 0) {
+    return 'Sinonimoetan oinarritutako pista.';
+  }
+
+  return clipText(`Sinonimo pista: ${candidateSynonyms.slice(0, 4).join(', ')}`, 220);
+};
+
+const buildDictionaryClue = (hitza: string, meaning: string | null): string => {
+  if (!meaning) return 'Hiztegiko pista.';
+  const masked = maskWordInClue(meaning, hitza);
+  return clipText(masked, 240);
+};
+
+const keyMatchesHints = (key: string, hints: string[]): boolean => {
+  const normalized = normalizeDictionaryKey(key);
+  return hints.some((hint) => normalized.includes(hint));
+};
+
+const isDictionaryErrorForMissingTable = (message: string): boolean =>
+  message.includes('relation') && message.includes('diccionario');
+
+const isDictionaryErrorForInvalidColumn = (message: string): boolean =>
+  (message.includes('column') && message.includes('does not exist')) ||
+  message.includes('operator does not exist') ||
+  message.includes('operator ~~*');
+
+const sanitizeSearchToken = (term: string): string =>
+  term.replace(/[%_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const buildDictionarySearchVariants = (term: string): string[] => {
+  const stripOuterPunctuation = (value: string): string =>
+    value.replace(
+      /^[\s"'`´‘’“”«»‹›()[\]{}.,;:!?¿¡\-_/\\]+|[\s"'`´‘’“”«»‹›()[\]{}.,;:!?¿¡\-_/\\]+$/g,
+      ''
+    );
+
+  const base = term.trim();
+  const stripped = stripOuterPunctuation(base);
+  const deAccented = stripped
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const candidates = [
+    base,
+    stripped,
+    deAccented,
+    stripped.slice(1),
+    stripped.slice(0, -1),
+    stripped.slice(1, -1),
+  ];
+
+  const unique = new Set<string>();
+  for (const item of candidates) {
+    const cleaned = sanitizeSearchToken(item);
+    if (!cleaned || cleaned.length < 2) continue;
+    unique.add(cleaned);
+  }
+
+  return Array.from(unique);
+};
+
+const valueAsText = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
+  }
+  return null;
+};
+
+const findMeaningKey = (
+  row: Record<string, unknown>,
+  wordKey: string | null
+): string | null => {
+  if (cachedDictionaryMeaningColumn) {
+    const cachedKey = cachedDictionaryMeaningColumn;
+    if (cachedKey !== wordKey && valueAsText(row[cachedKey])) return cachedKey;
+  }
+
+  const keys = Object.keys(row);
+  for (const key of keys) {
+    if (key === wordKey) continue;
+    const value = row[key];
+    if (!valueAsText(value)) continue;
+
+    if (
+      DICTIONARY_MEANING_COLUMN_CANDIDATES.includes(key.toLowerCase()) ||
+      keyMatchesHints(key, DICTIONARY_MEANING_KEY_HINTS)
+    ) {
+      cachedDictionaryMeaningColumn = key;
+      return key;
+    }
+  }
+
+  const fallback = keys.find((key) => {
+    if (key === wordKey) return false;
+    if (!valueAsText(row[key])) return false;
+    return !keyMatchesHints(key, DICTIONARY_WORD_KEY_HINTS);
+  });
+
+  if (fallback) return fallback;
+
+  const anyValue = keys.find(
+    (key) => key !== wordKey && Boolean(valueAsText(row[key]))
+  );
+  return anyValue ?? null;
+};
+
+const findWordKey = (row: Record<string, unknown>): string | null => {
+  if (cachedDictionaryWordColumn && valueAsText(row[cachedDictionaryWordColumn])) {
+    return cachedDictionaryWordColumn;
+  }
+
+  for (const key of Object.keys(row)) {
+    if (!valueAsText(row[key])) continue;
+    if (
+      DICTIONARY_WORD_COLUMN_CANDIDATES.includes(key.toLowerCase()) ||
+      keyMatchesHints(key, DICTIONARY_WORD_KEY_HINTS)
+    ) {
+      return key;
+    }
+  }
+
+  return (
+    Object.keys(row).find((key) => Boolean(valueAsText(row[key]))) ?? null
+  );
+};
+
+const probeDictionaryTextColumns = async (): Promise<string[]> => {
+  if (isDictionaryTableUnavailable) return [];
+  if (cachedDictionaryTextColumns) return cachedDictionaryTextColumns;
+
+  const { data, error } = await supabasePublic
+    .from('diccionario')
+    .select('*')
+    .limit(1);
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (isDictionaryErrorForMissingTable(message)) {
+      isDictionaryTableUnavailable = true;
+    }
+    cachedDictionaryTextColumns = [];
+    return [];
+  }
+
+  const row = (data?.[0] ?? null) as Record<string, unknown> | null;
+  if (!row) {
+    cachedDictionaryTextColumns = [...DICTIONARY_WORD_COLUMN_CANDIDATES];
+    return cachedDictionaryTextColumns;
+  }
+
+  const textKeys = Object.keys(row).filter((key) => {
+    const value = row[key];
+    return value == null || typeof value === 'string' || Array.isArray(value);
+  });
+
+  const ordered = [
+    ...textKeys.filter((key) => keyMatchesHints(key, DICTIONARY_WORD_KEY_HINTS)),
+    ...textKeys.filter((key) => !keyMatchesHints(key, DICTIONARY_WORD_KEY_HINTS)),
+  ];
+
+  if (!cachedDictionaryMeaningColumn) {
+    const suggestedMeaningColumn = textKeys.find((key) =>
+      keyMatchesHints(key, DICTIONARY_MEANING_KEY_HINTS)
+    );
+    if (suggestedMeaningColumn) {
+      cachedDictionaryMeaningColumn = suggestedMeaningColumn;
+    }
+  }
+
+  if (!cachedDictionaryWordColumn) {
+    const suggestedWordColumn = ordered[0] ?? null;
+    if (suggestedWordColumn) {
+      cachedDictionaryWordColumn = suggestedWordColumn;
+    }
+  }
+
+  cachedDictionaryTextColumns = ordered.length > 0
+    ? ordered
+    : [...DICTIONARY_WORD_COLUMN_CANDIDATES];
+
+  return cachedDictionaryTextColumns;
+};
+
+const fetchDictionaryRowByColumn = async (
+  column: string,
+  terms: string[]
+): Promise<Record<string, unknown> | null> => {
+  if (isDictionaryTableUnavailable || invalidDictionaryWordColumns.has(column)) {
+    return null;
+  }
+
+  const normalizeMatchText = (value: string): string =>
+    value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const queryByPattern = async (
+    pattern: string,
+    limit: number
+  ): Promise<Array<Record<string, unknown>> | null> => {
+    const { data, error } = await supabasePublic
+      .from('diccionario')
+      .select('*')
+      .ilike(column, pattern)
+      .limit(limit);
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (isDictionaryErrorForMissingTable(message)) {
+        isDictionaryTableUnavailable = true;
+      }
+      if (isDictionaryErrorForInvalidColumn(message)) {
+        invalidDictionaryWordColumns.add(column);
+      }
+      return null;
+    }
+
+    return (data ?? []) as Array<Record<string, unknown>>;
+  };
+
+  for (const term of terms) {
+    const exactRows = await queryByPattern(term, 1);
+    if (exactRows === null) return null;
+    if (exactRows.length > 0) return exactRows[0];
+  }
+
+  for (const term of terms) {
+    const startsWithRows = await queryByPattern(`${term}%`, 8);
+    if (startsWithRows === null) return null;
+    if (startsWithRows.length > 0) return startsWithRows[0];
+  }
+
+  for (const term of terms) {
+    const containsRows = await queryByPattern(`%${term}%`, 40);
+    if (containsRows === null) return null;
+    if (containsRows.length === 0) continue;
+
+    const normalizedTerm = normalizeMatchText(term);
+    let bestRow: Record<string, unknown> | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    let bestLength = Number.POSITIVE_INFINITY;
+
+    for (const row of containsRows) {
+      const candidateValue = valueAsText(row[column]);
+      if (!candidateValue) continue;
+
+      const normalizedCandidate = normalizeMatchText(candidateValue);
+      if (!normalizedCandidate) continue;
+
+      let score = Number.POSITIVE_INFINITY;
+      if (normalizedCandidate === normalizedTerm) {
+        score = 0;
+      } else if (normalizedCandidate.startsWith(`${normalizedTerm} `)) {
+        score = 1;
+      } else if (normalizedCandidate.startsWith(normalizedTerm)) {
+        score = 2;
+      } else if (` ${normalizedCandidate} `.includes(` ${normalizedTerm} `)) {
+        score = 3;
+      } else {
+        const index = normalizedCandidate.indexOf(normalizedTerm);
+        if (index >= 0) score = 10 + index;
+      }
+
+      if (!Number.isFinite(score)) continue;
+
+      const length = normalizedCandidate.length;
+      if (score < bestScore || (score === bestScore && length < bestLength)) {
+        bestScore = score;
+        bestLength = length;
+        bestRow = row;
+      }
+    }
+
+    if (bestRow) return bestRow;
+  }
+
+  return null;
+};
+
+export const lookupDictionaryMeaning = async (
+  term: string
+): Promise<DictionaryMeaning | null> => {
+  const normalized = term.trim();
+  if (!normalized) return null;
+  if (isDictionaryTableUnavailable) return null;
+
+  const searchVariants = buildDictionarySearchVariants(normalized);
+  if (searchVariants.length === 0) return null;
+
+  const probedColumns = await probeDictionaryTextColumns();
+
+  const columnsToTry = [
+    ...(cachedDictionaryWordColumn ? [cachedDictionaryWordColumn] : []),
+    ...probedColumns,
+    ...DICTIONARY_WORD_COLUMN_CANDIDATES,
+  ];
+
+  const visited = new Set<string>();
+  for (const column of columnsToTry) {
+    if (visited.has(column)) continue;
+    visited.add(column);
+
+    const row = await fetchDictionaryRowByColumn(column, searchVariants);
+    if (!row) continue;
+
+    const wordKey = findWordKey(row) ?? column;
+    cachedDictionaryWordColumn = wordKey;
+
+    const meaningKey = findMeaningKey(row, wordKey);
+    if (!meaningKey) continue;
+
+    const esanahia = valueAsText(row[meaningKey]);
+    if (!esanahia) continue;
+
+    const hitza = valueAsText(row[wordKey]) ?? normalized;
+    return { hitza, esanahia };
+  }
+
+  return null;
 };
 
 export const fetchWordsByLevel = async (
@@ -84,6 +527,72 @@ export const fetchAllActiveWords = async (): Promise<WordData[]> => {
       sinonimoak: normalizeSynonyms(r.sinonimoak),
     }))
     .filter((w) => w.hitza && w.sinonimoak.length > 0);
+};
+
+export const fetchOrthographyWordPool = async (): Promise<OrthographyPoolWord[]> => {
+  const merged = new Map<string, OrthographyPoolWord>();
+
+  const mergeWord = (candidate: OrthographyPoolWord) => {
+    const normalizedWord = candidate.hitza.trim().toLowerCase();
+    if (!normalizedWord || normalizedWord.length < 3) return;
+
+    const existing = merged.get(normalizedWord);
+    if (!existing) {
+      merged.set(normalizedWord, candidate);
+      return;
+    }
+
+    if (candidate.clue.length > existing.clue.length) {
+      merged.set(normalizedWord, candidate);
+    }
+  };
+
+  const synonymWords = await fetchAllActiveWords();
+  synonymWords.forEach((word) => {
+    mergeWord({
+      sourceId: `syn-${word.id}`,
+      hitza: word.hitza.trim().toLowerCase(),
+      clue: buildSynonymClue(word.hitza, word.sinonimoak),
+      source: 'synonyms',
+    });
+  });
+
+  if (isDictionaryTableUnavailable) {
+    return Array.from(merged.values());
+  }
+
+  const { data, error } = await supabasePublic
+    .from('diccionario')
+    .select('*')
+    .limit(ORTHOGRAPHY_DICTIONARY_FETCH_LIMIT);
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (isDictionaryErrorForMissingTable(message)) {
+      isDictionaryTableUnavailable = true;
+    }
+    return Array.from(merged.values());
+  }
+
+  ((data ?? []) as Array<Record<string, unknown>>).forEach((row, index) => {
+    const wordKey = findWordKey(row);
+    if (!wordKey) return;
+
+    const hitza = valueAsText(row[wordKey]);
+    if (!hitza) return;
+
+    const meaningKey = findMeaningKey(row, wordKey);
+    const meaning = meaningKey ? valueAsText(row[meaningKey]) : null;
+
+    mergeWord({
+      sourceId: `dict-${index}`,
+      hitza: hitza.trim().toLowerCase(),
+      clue: buildDictionaryClue(hitza, meaning),
+      source: 'dictionary',
+    });
+  });
+
+  return Array.from(merged.values());
 };
 
 export const fetchHistoryByUser = async (userId: string): Promise<GameRun[]> => {
@@ -138,6 +647,67 @@ export const fetchFailedWordsByUser = async (
       wrong_rate: v.attempts > 0 ? (v.wrong / v.attempts) * 100 : 0,
     }))
     .filter((v) => v.attempts > 1);
+};
+
+const mapStatRowsWithTimeColumn = (
+  rows: Array<Record<string, unknown>>,
+  timeColumn: 'created_at' | 'played_at'
+): UserAnswerStatRow[] =>
+  rows.map((row) => ({
+    source_id: (row.source_id as string | number) ?? '',
+    hitza: String(row.hitza ?? ''),
+    is_correct: Boolean(row.is_correct),
+    level: Number(row.level) as DifficultyLevel,
+    event_at: (row[timeColumn] as string | null) ?? null,
+  }));
+
+const isMissingColumnError = (message: string): boolean =>
+  message.includes('column') && message.includes('does not exist');
+
+export const fetchUserAnswerStatsRows = async (
+  userId: string
+): Promise<UserAnswerStatRow[]> => {
+  const queryByTimeColumn = async (
+    timeColumn: 'created_at' | 'played_at'
+  ): Promise<UserAnswerStatRow[] | null> => {
+    const { data, error } = await supabase
+      .from('game_answers')
+      .select(`source_id, hitza, is_correct, level, ${timeColumn}`)
+      .eq('user_id', userId)
+      .order(timeColumn, { ascending: false });
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (isMissingColumnError(message)) return null;
+      return [];
+    }
+
+    return mapStatRowsWithTimeColumn(
+      (data ?? []) as Array<Record<string, unknown>>,
+      timeColumn
+    );
+  };
+
+  const withCreatedAt = await queryByTimeColumn('created_at');
+  if (withCreatedAt) return withCreatedAt;
+
+  const withPlayedAt = await queryByTimeColumn('played_at');
+  if (withPlayedAt) return withPlayedAt;
+
+  const { data, error } = await supabase
+    .from('game_answers')
+    .select('source_id, hitza, is_correct, level')
+    .eq('user_id', userId);
+
+  if (error) return [];
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    source_id: (row.source_id as string | number) ?? '',
+    hitza: String(row.hitza ?? ''),
+    is_correct: Boolean(row.is_correct),
+    level: Number(row.level) as DifficultyLevel,
+    event_at: null,
+  }));
 };
 
 export const insertGameAnswer = async (params: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DailyLeaderboardEntry,
   DailyRunWithAnswers,
@@ -12,7 +12,6 @@ import {
   hasPlayedDailyChallenge,
   resolveActiveChallengeDate,
 } from '../lib/supabaseRepo';
-import { supabase } from '../supabase';
 import {
   formatLocalDate,
   getCurrentMonthRange,
@@ -48,60 +47,87 @@ export const useDailyCompetitionData = ({ userId, shouldRefresh }: Params) => {
   const [activeChallengeDate, setActiveChallengeDate] = useState<string>(
     formatLocalDate(new Date())
   );
+  const competitionDateRef = useRef(competitionDate);
+  const refreshRequestIdRef = useRef(0);
 
-  const refreshCompetitionData = async () => {
+  useEffect(() => {
+    competitionDateRef.current = competitionDate;
+  }, [competitionDate]);
+
+  const refreshCompetitionData = useCallback(async () => {
     if (!userId) return;
+    const requestId = ++refreshRequestIdRef.current;
     setIsLoadingCompetition(true);
     setCompetitionError(null);
     try {
-      const { error: accessError } = await supabase
-        .from('daily_challenge_runs')
-        .select('id', { head: true, count: 'exact' })
-        .limit(1);
-      if (accessError) {
-        setCompetitionError(
-          `Ezin da sailkapena irakurri: ${accessError.message} (${accessError.code ?? 'no_code'})`
-        );
-      }
-
       const today = await resolveActiveChallengeDate();
+      if (requestId !== refreshRequestIdRef.current) return;
       setActiveChallengeDate(today);
-      const effectiveCompetitionDate = competitionDate > today ? today : competitionDate;
-      if (competitionDate !== effectiveCompetitionDate) {
+      const requestedCompetitionDate = competitionDateRef.current;
+      const effectiveCompetitionDate =
+        requestedCompetitionDate > today ? today : requestedCompetitionDate;
+      if (requestedCompetitionDate !== effectiveCompetitionDate) {
+        competitionDateRef.current = effectiveCompetitionDate;
         setCompetitionDate(effectiveCompetitionDate);
       }
-      const [playedToday, daily, weekly, monthly, runsByDate] = await Promise.all([
+
+      const weeklyPromise = fetchPeriodLeaderboard(getCurrentWeekRange());
+      const monthlyPromise = fetchPeriodLeaderboard(getCurrentMonthRange());
+      const runsByDatePromise =
+        fetchDailyRunsWithAnswersByDate(effectiveCompetitionDate);
+
+      const [playedToday, daily] = await Promise.all([
         hasPlayedDailyChallenge(userId, today),
         fetchDailyLeaderboard(today),
-        fetchPeriodLeaderboard(getCurrentWeekRange()),
-        fetchPeriodLeaderboard(getCurrentMonthRange()),
-        fetchDailyRunsWithAnswersByDate(effectiveCompetitionDate),
       ]);
+      if (requestId !== refreshRequestIdRef.current) return;
 
       setHasPlayedToday(playedToday);
       setDailyLeaderboard(daily);
+      setIsLoadingCompetition(false);
+
+      const [weekly, monthly, runsByDate] = await Promise.all([
+        weeklyPromise,
+        monthlyPromise,
+        runsByDatePromise,
+      ]);
+      if (requestId !== refreshRequestIdRef.current) return;
+
       setWeeklyLeaderboard(weekly);
       setMonthlyLeaderboard(monthly);
       setDailyRunsByDate(runsByDate);
+    } catch (error) {
+      if (requestId !== refreshRequestIdRef.current) return;
+      const errorMessage =
+        error instanceof Error ? error.message : 'Errore ezezaguna';
+      setCompetitionError(`Ezin izan da sailkapena kargatu: ${errorMessage}`);
     } finally {
-      setIsLoadingCompetition(false);
+      if (requestId === refreshRequestIdRef.current) {
+        setIsLoadingCompetition(false);
+      }
     }
-  };
+  }, [userId]);
+
+  useEffect(() => () => {
+    refreshRequestIdRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!userId) {
+      refreshRequestIdRef.current += 1;
       setHasPlayedToday(false);
       setDailyLeaderboard([]);
       setWeeklyLeaderboard([]);
       setMonthlyLeaderboard([]);
       setDailyRunsByDate([]);
+      setIsLoadingCompetition(false);
       setCompetitionError(null);
       return;
     }
     if (shouldRefresh) {
       void refreshCompetitionData();
     }
-  }, [userId, shouldRefresh, competitionDate]);
+  }, [competitionDate, refreshCompetitionData, shouldRefresh, userId]);
 
   return {
     competitionPeriod,

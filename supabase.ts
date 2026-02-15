@@ -13,3 +13,13 @@ const supabaseAnonKey =
   env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_r1WBXKqC-MUCo3ilFM9Xsg_6v78aqAG';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Public read-only client. It never adopts end-user sessions, so queries
+// always run with the anon role policies.
+export const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});

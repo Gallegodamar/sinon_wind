@@ -7,6 +7,18 @@ export type AuthUser = {
 
 export type SearchResultItem = WordData & { level: DifficultyLevel };
 
+export type DictionaryMeaning = {
+  hitza: string;
+  esanahia: string;
+};
+
+export type OrthographyPoolWord = {
+  sourceId: string;
+  hitza: string;
+  clue: string;
+  source: 'synonyms' | 'dictionary';
+};
+
 export type GameRun = {
   id: string;
   played_at: string;
@@ -22,6 +34,14 @@ export type GameAnswerRow = {
   hitza: string;
   is_correct: boolean;
   level: DifficultyLevel;
+};
+
+export type UserAnswerStatRow = {
+  source_id: string | number;
+  hitza: string;
+  is_correct: boolean;
+  level: DifficultyLevel;
+  event_at: string | null;
 };
 
 export type FailedWordStat = {

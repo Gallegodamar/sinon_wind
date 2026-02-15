@@ -1,5 +1,6 @@
 import React from 'react';
 import { Player } from '../../types';
+import { AppShell } from '../layout/AppShell';
 
 type GameMode = 'regular' | 'daily';
 
@@ -7,110 +8,118 @@ type Props = {
   userExists: boolean;
   gameMode: GameMode;
   players: Player[];
-  dailyQuestions: number;
-  questionsPerPlayer: number;
+  questionsPerTurn: number;
   onPlayAgain: () => void;
   onReview: () => void;
   onHome: () => void;
+  topRightControl?: React.ReactNode;
 };
 
 export const SummaryScreen: React.FC<Props> = ({
   userExists,
   gameMode,
   players,
-  dailyQuestions,
-  questionsPerPlayer,
+  questionsPerTurn,
   onPlayAgain,
   onReview,
   onHome,
+  topRightControl,
 }) => {
   const isSoloLoggedIn = userExists && players.length === 1;
   const player = players[0];
   const score = player?.score || 0;
-  const totalQuestions = gameMode === 'daily' ? dailyQuestions : questionsPerPlayer;
+  const totalQuestions = questionsPerTurn;
   const percentage = ((player?.correctAnswers || 0) / totalQuestions) * 100;
   const sortedPlayers = [...players]
     .filter((p) => p.time > 0)
     .sort((a, b) => (b.score === a.score ? a.time - b.time : b.score - a.score));
 
+  const title = isSoloLoggedIn
+    ? gameMode === 'daily'
+      ? 'Eguneko Lehiaketa'
+      : 'Zure Emaitzak'
+    : 'Sailkapena';
+
   return (
-    <div className="h-[100dvh] w-full flex flex-col items-center bg-indigo-950 safe-pt safe-px overflow-hidden">
-      <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl p-6 md:p-8 flex flex-col h-full max-h-[92dvh] border-t-[12px] border-indigo-600 mt-2 mb-6 overflow-hidden">
-        <h2 className="text-3xl font-black text-slate-900 uppercase text-center mb-6">
-          {isSoloLoggedIn
-            ? gameMode === 'daily'
-              ? 'Eguneko Lehiaketa'
-              : 'Zure Emaitzak'
-            : 'Sailkapena'}
-        </h2>
-        <div className="grow overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-50/50 mb-6 flex flex-col">
-          {isSoloLoggedIn ? (
-            <div className="h-full flex flex-col items-center justify-center p-4 space-y-6">
-              <div className="relative w-32 h-32 flex items-center justify-center">
-                <svg className="w-full h-full -rotate-90">
-                  <circle
-                    cx="64"
-                    cy="64"
-                    r="56"
-                    stroke="currentColor"
-                    strokeWidth="10"
-                    fill="transparent"
-                    className="text-slate-200"
-                  />
-                  <circle
-                    cx="64"
-                    cy="64"
-                    r="56"
-                    stroke="currentColor"
-                    strokeWidth="10"
-                    fill="transparent"
-                    strokeDasharray={351.8}
-                    strokeDashoffset={351.8 - (351.8 * percentage) / 100}
-                    strokeLinecap="round"
-                    className="text-indigo-600 transition-all duration-1000"
-                  />
-                </svg>
-                <div className="absolute text-center">
-                  <span className="text-3xl font-black text-indigo-950">{percentage.toFixed(0)}%</span>
+    <AppShell
+      topRightControl={topRightControl}
+      header={
+        <div className="text-center">
+          <h2 className="font-display text-2xl font-semibold text-slate-900 md:text-3xl">
+            {title}
+          </h2>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        {isSoloLoggedIn ? (
+          <section className="surface-card surface-card--muted p-6">
+            <div className="grid gap-6 lg:grid-cols-[220px_1fr] lg:items-center">
+              <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-full border-8 border-slate-100 bg-white shadow-inner">
+                <div className="text-center">
+                  <p className="font-display text-5xl font-semibold text-teal-700">
+                    {percentage.toFixed(0)}%
+                  </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-center">
-                <div className="bg-white p-4 rounded-3xl border border-emerald-100">
-                  <p className="text-[9px] font-black uppercase text-emerald-400">Puntuak</p>
-                  <p className="text-2xl font-black text-emerald-600">{score}</p>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-emerald-700">Puntuak</p>
+                  <p className="font-display mt-1 text-3xl font-semibold text-emerald-700">
+                    {score}
+                  </p>
                 </div>
-                <div className="bg-white p-4 rounded-3xl border border-rose-100">
-                  <p className="text-[9px] font-black uppercase text-rose-400">Asmatuak</p>
-                  <p className="text-2xl font-black text-rose-600">{player.correctAnswers}</p>
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-center">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-cyan-700">Asmatuak</p>
+                  <p className="font-display mt-1 text-3xl font-semibold text-cyan-800">
+                    {player.correctAnswers}
+                  </p>
                 </div>
-                <div className="bg-white p-4 rounded-3xl border border-indigo-100 col-span-2">
-                  <p className="text-[9px] font-black uppercase text-indigo-400">Denbora Totala</p>
-                  <p className="text-2xl font-black text-indigo-950">{player.time.toFixed(1)}s</p>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Denbora</p>
+                  <p className="font-display mt-1 text-3xl font-semibold text-slate-800">
+                    {player.time.toFixed(1)}s
+                  </p>
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="overflow-y-auto custom-scrollbar grow p-2">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 bg-slate-100">
+          </section>
+        ) : (
+          <section className="surface-card p-3 md:p-4">
+            <div className="custom-scrollbar max-h-[60dvh] overflow-y-auto rounded-xl border border-slate-200">
+              <table className="w-full border-collapse text-left">
+                <thead className="sticky top-0 bg-slate-50">
                   <tr>
-                    <th className="p-3 text-[9px] font-black uppercase">#</th>
-                    <th className="p-3 text-[9px] font-black uppercase">Nor</th>
-                    <th className="p-3 text-center text-[9px] font-black uppercase">Pts</th>
-                    <th className="p-3 text-right text-[9px] font-black uppercase">S.</th>
+                    <th className="p-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                      #
+                    </th>
+                    <th className="p-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                      Jokalaria
+                    </th>
+                    <th className="p-3 text-center text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                      Puntuak
+                    </th>
+                    <th className="p-3 text-right text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                      Denbora
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedPlayers.map((p, idx) => (
-                    <tr key={p.id} className="border-b border-slate-100 bg-white">
-                      <td className="p-3 font-black text-xl">{idx + 1}</td>
-                      <td className="p-3 font-black text-xs uppercase">{p.name}</td>
+                  {sortedPlayers.map((p, index) => (
+                    <tr key={p.id} className="border-t border-slate-100 bg-white">
+                      <td className="p-3 font-display text-2xl font-semibold text-slate-900">
+                        {index + 1}
+                      </td>
+                      <td className="p-3 text-sm font-semibold text-slate-800">
+                        {p.name}
+                      </td>
                       <td className="p-3 text-center">
-                        <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-black">
+                        <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-bold text-teal-700">
                           {p.score}
                         </span>
                       </td>
-                      <td className="p-3 text-right font-mono text-[10px] text-slate-400">
+                      <td className="p-3 text-right text-xs font-semibold text-slate-500">
                         {p.time.toFixed(1)}s
                       </td>
                     </tr>
@@ -118,33 +127,27 @@ export const SummaryScreen: React.FC<Props> = ({
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-2 shrink-0">
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={onPlayAgain}
-              className={`font-black py-4 rounded-2xl shadow-lg uppercase text-xs active:scale-95 ${
-                gameMode === 'daily' ? 'bg-slate-200 text-slate-500' : 'bg-indigo-600 text-white'
-              }`}
-            >
-              {gameMode === 'daily' ? 'Bihar berriro' : 'Berriro'}
-            </button>
-            <button
-              onClick={onReview}
-              className="bg-white text-indigo-600 font-black py-4 rounded-2xl shadow-md uppercase text-xs border border-indigo-100 active:scale-95"
-            >
-              Hitzak
-            </button>
-          </div>
+          </section>
+        )}
+
+        <section className="grid gap-3 sm:grid-cols-3">
           <button
-            onClick={onHome}
-            className="w-full bg-slate-100 text-slate-500 font-black py-3 rounded-xl uppercase text-[10px] active:scale-95"
+            onClick={onPlayAgain}
+            className={
+              'btn-primary py-3 sm:col-span-1 ' +
+              (gameMode === 'daily' ? 'opacity-55 hover:brightness-100' : '')
+            }
           >
+            {gameMode === 'daily' ? 'Bihar berriro' : 'Berriro jolastu'}
+          </button>
+          <button onClick={onReview} className="btn-secondary py-3 sm:col-span-1">
+            Partidako hitzak
+          </button>
+          <button onClick={onHome} className="btn-ghost border border-slate-200 py-3 text-slate-600 sm:col-span-1">
             Hasiera
           </button>
-        </div>
+        </section>
       </div>
-    </div>
+    </AppShell>
   );
 };

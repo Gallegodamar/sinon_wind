@@ -11,26 +11,36 @@ export const useDebouncedWordSearch = (
   const searchRequestIdRef = useRef(0);
 
   useEffect(() => {
-    const performSearch = async () => {
-      const normalizedTerm = searchTerm.trim().toLowerCase();
-      if (!normalizedTerm || normalizedTerm.length < 2) {
-        searchRequestIdRef.current += 1;
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+    let isCancelled = false;
 
-      const requestId = ++searchRequestIdRef.current;
-      setIsSearching(true);
-      const results = await searchWords(normalizedTerm);
-
-      if (requestId !== searchRequestIdRef.current) return;
-      setSearchResults(results);
+    if (!normalizedTerm || normalizedTerm.length < 2) {
+      searchRequestIdRef.current += 1;
+      setSearchResults([]);
       setIsSearching(false);
-    };
+      return;
+    }
 
-    const timer = setTimeout(performSearch, delayMs);
-    return () => clearTimeout(timer);
+    const requestId = ++searchRequestIdRef.current;
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchWords(normalizedTerm);
+        if (isCancelled || requestId !== searchRequestIdRef.current) return;
+        setSearchResults(results);
+      } catch {
+        if (isCancelled || requestId !== searchRequestIdRef.current) return;
+        setSearchResults([]);
+      } finally {
+        if (isCancelled || requestId !== searchRequestIdRef.current) return;
+        setIsSearching(false);
+      }
+    }, delayMs);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
   }, [delayMs, searchTerm]);
 
   return { searchResults, isSearching };

@@ -1,7 +1,12 @@
-import { useCallback, useRef, useState } from 'react';
+import { Dispatch, SetStateAction, useCallback, useRef, useState } from 'react';
 import { AuthUser, FailedWordStat } from '../appTypes';
 import { DifficultyLevel, GameStatus, Player, Question, WordData } from '../types';
 import { generatePoolFromData } from '../lib/gameLogic';
+import {
+  BASE_POINTS_PER_CORRECT,
+  DAILY_QUESTIONS,
+  QUESTIONS_PER_PLAYER,
+} from '../lib/gameConfig';
 import {
   fetchAllActiveWords,
   hasPlayedDailyChallenge,
@@ -24,10 +29,6 @@ type PendingDailyAnswer = {
   points: number;
 };
 
-const QUESTIONS_PER_PLAYER = 10;
-const DAILY_QUESTIONS = 10;
-const BASE_POINTS_PER_CORRECT = 10;
-
 const getTimeBonus = (seconds: number): number => {
   if (seconds < 2) return 5;
   if (seconds < 4) return 3;
@@ -35,11 +36,14 @@ const getTimeBonus = (seconds: number): number => {
   return 0;
 };
 
+const getQuestionsPerTurn = (mode: GameMode): number =>
+  mode === 'daily' ? DAILY_QUESTIONS : QUESTIONS_PER_PLAYER;
+
 type Params = {
   user: AuthUser | null;
   difficulty: DifficultyLevel;
   players: Player[];
-  setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
+  setPlayers: Dispatch<SetStateAction<Player[]>>;
   ensureLevelWords: (level: DifficultyLevel) => Promise<WordData[]>;
   fetchMostFailedWords: () => Promise<FailedWordStat[]>;
   setStatus: (status: GameStatus) => void;
@@ -110,6 +114,9 @@ export const useGameSession = ({
         pendingDailyAnswersRef.current = [];
         setCurrentPlayerIndex(0);
         setCurrentQuestionIndex(0);
+        setSelectedAnswer(null);
+        setIsAnswered(false);
+        setCurrentAnswerBonus(0);
         setStatus(GameStatus.INTERMISSION);
       } finally {
         setIsLoadingWords(false);
@@ -154,6 +161,7 @@ export const useGameSession = ({
       setCurrentQuestionIndex(0);
       setSelectedAnswer(null);
       setIsAnswered(false);
+      setCurrentAnswerBonus(0);
       pendingDailyAnswersRef.current = [];
       setStatus(GameStatus.INTERMISSION);
     } finally {
@@ -161,7 +169,7 @@ export const useGameSession = ({
     }
   }, [setHasPlayedToday, setPlayers, setStatus, user]);
 
-  const startPlayerTurn = () => {
+  const startPlayerTurn = useCallback(() => {
     turnStartTimeRef.current = Date.now();
     questionStartTimeRef.current = Date.now();
     pendingDailyAnswersRef.current = [];
@@ -170,15 +178,16 @@ export const useGameSession = ({
     setCurrentQuestionIndex(0);
     setIsAnswered(false);
     setSelectedAnswer(null);
-  };
+  }, [setStatus]);
 
-  const handlePlayerNameChange = (id: number, name: string) => {
+  const handlePlayerNameChange = useCallback((id: number, name: string) => {
     setPlayers((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
-  };
+  }, [setPlayers]);
 
-  const handleAnswer = async (answer: string) => {
+  const handleAnswer = useCallback(async (answer: string) => {
     if (isAnswered) return;
-    const poolIdx = currentPlayerIndex * QUESTIONS_PER_PLAYER + currentQuestionIndex;
+    const questionsPerTurn = getQuestionsPerTurn(gameMode);
+    const poolIdx = currentPlayerIndex * questionsPerTurn + currentQuestionIndex;
     const currentQuestion = questionPool[poolIdx];
     if (!currentQuestion) return;
 
@@ -227,7 +236,16 @@ export const useGameSession = ({
         )
       );
     }
-  };
+  }, [
+    currentPlayerIndex,
+    currentQuestionIndex,
+    difficulty,
+    gameMode,
+    isAnswered,
+    questionPool,
+    setPlayers,
+    user,
+  ]);
 
   const saveToSupabase = useCallback(
     async (player: Player) => {
@@ -303,8 +321,9 @@ export const useGameSession = ({
     }
   }, [currentPlayerIndex, players, saveToSupabase, setPlayers, setStatus, user]);
 
-  const nextQuestion = () => {
-    if (currentQuestionIndex < QUESTIONS_PER_PLAYER - 1) {
+  const nextQuestion = useCallback(() => {
+    const questionsPerTurn = getQuestionsPerTurn(gameMode);
+    if (currentQuestionIndex < questionsPerTurn - 1) {
       setCurrentQuestionIndex((prev) => prev + 1);
       questionStartTimeRef.current = Date.now();
       setCurrentAnswerBonus(0);
@@ -313,7 +332,7 @@ export const useGameSession = ({
     } else {
       void finishPlayerTurn();
     }
-  };
+  }, [currentQuestionIndex, finishPlayerTurn, gameMode]);
 
   return {
     gameMode,
