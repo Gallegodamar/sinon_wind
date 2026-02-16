@@ -611,6 +611,13 @@ export const ContributeScreen: React.FC<Props> = ({
 
   const periodRows =
     competitionPeriod === 'weekly' ? weeklyLeaderboard : monthlyLeaderboard;
+  const handleHeaderBack = () => {
+    if (activeTab === 'home') {
+      onBack();
+      return;
+    }
+    setActiveTab('home');
+  };
 
   const renderRankBadge = (rank: number) => {
     const medal = getRankMedalStyle(rank);
@@ -1278,19 +1285,18 @@ export const ContributeScreen: React.FC<Props> = ({
       topRightControl={topRightControl}
       header={
         <div className="flex w-full items-center justify-between gap-3">
-          {activeTab === 'home' ? (
-            <div className="w-16" />
-          ) : (
-            <button onClick={() => setActiveTab('home')} className="btn-ghost">
-              Atzera
-            </button>
-          )}
+          <button
+            onClick={handleHeaderBack}
+            className="btn-ghost inline-flex min-w-[5.25rem] items-center justify-start"
+          >
+            {activeTab === 'home' ? 'Erronka' : 'Atzera'}
+          </button>
           <div className="text-center">
             <h2 className="font-display text-lg font-semibold text-slate-900">
               Menua
             </h2>
           </div>
-          <div />
+          <div className="w-[5.25rem]" />
         </div>
       }
       footer={
