@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'elio-v13';
+const CACHE_NAME = 'elio-v15';
 const ASSETS = [
   '/',
   'index.html',

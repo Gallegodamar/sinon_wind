@@ -18,7 +18,7 @@ import { ContributeScreen, ContributeTab } from './components/screens/Contribute
 import { SetupScreen } from './components/screens/SetupScreen';
 import { SummaryScreen } from './components/screens/SummaryScreen';
 import { UserIdentityBadge } from './components/ui/UserIdentityBadge';
-import { useDebouncedWordSearch } from './hooks/useDebouncedWordSearch';
+import { AppShell } from './components/layout/AppShell';
 import { useDailyCompetitionData } from './hooks/useDailyCompetitionData';
 import { useGameSession } from './hooks/useGameSession';
 import {
@@ -55,15 +55,13 @@ const App: React.FC = () => {
   const [numPlayers, setNumPlayers] = useState(2);
   const [players, setPlayers] = useState<Player[]>(() => buildSetupPlayers(2));
 
-  // Auth, Search & History States
+  // Auth & History States
   const [user, setUser] = useState<AuthUser | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState<ContributeTab>('home');
-  const [searchTerm, setSearchTerm] = useState('');
-  const { searchResults, isSearching } = useDebouncedWordSearch(searchTerm);
 
   const [wordsByLevel, setWordsByLevel] = useState<Record<number, WordData[]>>({});
   const [isLoadingWordCache, setIsLoadingWordCache] = useState(false);
@@ -129,7 +127,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (status !== GameStatus.CONTRIBUTE) return;
     setActiveTab('home');
-    setSearchTerm('');
   }, [status]);
 
   const fetchWordsFromSupabase = useCallback(
@@ -287,6 +284,7 @@ const App: React.FC = () => {
           onBack={() => setStatus(GameStatus.SETUP)}
           topRightControl={topRightControl}
           userId={user?.id ?? ''}
+          userEmail={user?.email ?? null}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           startDailyCompetition={() => void startDailyCompetition()}
@@ -306,10 +304,6 @@ const App: React.FC = () => {
           difficulty={difficulty}
           setDifficulty={setDifficulty}
           startNewGame={startNewGame}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          isSearching={isSearching}
-          searchResults={searchResults}
         />
       );
     }
@@ -347,24 +341,22 @@ const App: React.FC = () => {
       const player = players[currentPlayerIndex];
       if (!currentQuestion || !player) {
         return (
-          <div className="min-h-[100dvh] w-full p-4 safe-pt safe-px safe-pb">
-            <div className="app-shell items-center justify-center p-6 text-center">
-              <div className="surface-card surface-card--muted max-w-md p-6">
-                <p className="font-display text-2xl font-semibold text-slate-900">
-                  Ezin izan da galdera kargatu.
-                </p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Partida berrabiarazi eta berriro saiatu.
-                </p>
-                <button
-                  onClick={goSetupOrContribute}
-                  className="btn-primary mt-5"
-                >
-                  Hasierara
-                </button>
-              </div>
+          <AppShell contentClassName="flex items-center justify-center p-6 text-center">
+            <div className="surface-card surface-card--muted max-w-md p-6">
+              <p className="font-display text-2xl font-semibold text-slate-900">
+                Ezin izan da galdera kargatu.
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                Partida berrabiarazi eta berriro saiatu.
+              </p>
+              <button
+                onClick={goSetupOrContribute}
+                className="btn-primary mt-5"
+              >
+                Hasierara
+              </button>
             </div>
-          </div>
+          </AppShell>
         );
       }
       return (

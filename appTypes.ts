@@ -12,6 +12,13 @@ export type DictionaryMeaning = {
   esanahia: string;
 };
 
+export type FavoriteWordCard = {
+  id: string;
+  hitza: string;
+  sinonimoak: string[];
+  esanahia: string | null;
+};
+
 export type OrthographyPoolWord = {
   sourceId: string;
   hitza: string;

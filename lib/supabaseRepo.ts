@@ -10,6 +10,7 @@ import {
   DictionaryMeaning,
   UserAnswerStatRow,
   OrthographyPoolWord,
+  FavoriteWordCard,
 } from '../appTypes';
 import { supabase, supabasePublic } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
@@ -527,6 +528,402 @@ export const fetchAllActiveWords = async (): Promise<WordData[]> => {
       sinonimoak: normalizeSynonyms(r.sinonimoak),
     }))
     .filter((w) => w.hitza && w.sinonimoak.length > 0);
+};
+
+const FAVORITE_FETCH_LIMIT = 1_200;
+
+const FAVORITE_USER_COLUMN_CANDIDATES = [
+  'user_id',
+  'user_name',
+  'username',
+  'user',
+  'name',
+  'userid',
+  'userId',
+  'uid',
+  'owner_id',
+  'profile_id',
+  'email',
+];
+
+const FAVORITE_WORD_COLUMN_CANDIDATES = [
+  'hitza',
+  'hitz',
+  'word',
+  'favorite_word',
+  'word_text',
+  'palabra',
+  'lemma',
+  'term',
+  'entry',
+  'title',
+];
+
+const FAVORITE_SYNONYM_COLUMN_CANDIDATES = [
+  'sinonimoak',
+  'sinonimo',
+  'synonym',
+  'synonyms',
+  'synonym_list',
+  'related_words',
+  'sinonimos',
+  'syns',
+];
+
+const FAVORITE_MEANING_COLUMN_CANDIDATES = [
+  'esanahia',
+  'esanahi',
+  'meaning',
+  'definition',
+  'definition_text',
+  'desc',
+  'significado',
+  'definicion',
+  'descripcion',
+  'azalpena',
+];
+
+const FAVORITE_WORD_KEY_HINTS = [
+  'hitz',
+  'word',
+  'palabr',
+  'lemm',
+  'term',
+  'entry',
+  'title',
+];
+
+const FAVORITE_SYNONYM_KEY_HINTS = ['sinon', 'syn'];
+
+const FAVORITE_MEANING_KEY_HINTS = [
+  'esanah',
+  'mean',
+  'defini',
+  'signific',
+  'descri',
+  'azalp',
+];
+
+let cachedFavoriteUserColumn: string | null = null;
+let isFavoriteTableUnavailable = false;
+const invalidFavoriteUserColumns = new Set<string>();
+
+const isFavoriteErrorForMissingTable = (message: string): boolean =>
+  message.includes('relation') && message.includes('user_favorite_words');
+
+type FavoriteUserLookupInput = {
+  userId: string;
+  userEmail?: string | null;
+  username?: string | null;
+};
+
+const buildFavoriteUserLookupValues = (
+  params: FavoriteUserLookupInput
+): string[] => {
+  const values: string[] = [];
+  const seen = new Set<string>();
+
+  const addValue = (value: unknown) => {
+    if (typeof value !== 'string') return;
+
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
+    const variants = [trimmed];
+    const lower = trimmed.toLowerCase();
+    if (lower !== trimmed) variants.push(lower);
+
+    variants.forEach((variant) => {
+      const dedupeKey = variant.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      values.push(variant);
+    });
+  };
+
+  addValue(params.userId);
+  addValue(params.userEmail);
+  addValue(params.username);
+
+  if (typeof params.userEmail === 'string') {
+    const email = params.userEmail.trim();
+    if (email) {
+      const [localPart] = email.split('@');
+      addValue(localPart);
+    }
+  }
+
+  return values;
+};
+
+const parseFavoriteSynonyms = (value: unknown): string[] => {
+  const normalizeToken = (token: string): string =>
+    token
+      .trim()
+      .replace(/^["'{\s]+/, '')
+      .replace(/["'}\s]+$/, '')
+      .trim();
+
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => normalizeToken(String(item)))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  if (
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('{') && trimmed.endsWith('}'))
+  ) {
+    try {
+      return parseFavoriteSynonyms(JSON.parse(trimmed));
+    } catch {
+      // Ignore JSON parsing failures and continue with plain-text parsing.
+    }
+
+    // Postgres array string format: {one,two}
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      const inside = trimmed.slice(1, -1).trim();
+      if (!inside) return [];
+      return Array.from(
+        new Set(
+          inside
+            .split(/[,;|/\n]+/)
+            .map(normalizeToken)
+            .filter(Boolean)
+        )
+      );
+    }
+  }
+
+  if (!/[,;|/\n]/.test(trimmed)) {
+    const singleToken = normalizeToken(trimmed);
+    return singleToken.length <= 80 ? [singleToken] : [];
+  }
+
+  return Array.from(
+    new Set(
+      trimmed
+        .split(/[,;|/\n]+/)
+        .map(normalizeToken)
+        .filter(Boolean)
+    )
+  );
+};
+
+const findFavoriteColumnKey = (
+  row: Record<string, unknown>,
+  exactCandidates: string[],
+  hintCandidates: string[],
+  excluded: string[] = []
+): string | null => {
+  const excludedSet = new Set(excluded.filter(Boolean));
+  const keys = Object.keys(row);
+
+  for (const key of keys) {
+    if (excludedSet.has(key)) continue;
+    if (!valueAsText(row[key]) && !Array.isArray(row[key])) continue;
+    if (exactCandidates.includes(key.toLowerCase())) return key;
+  }
+
+  for (const key of keys) {
+    if (excludedSet.has(key)) continue;
+    if (!valueAsText(row[key]) && !Array.isArray(row[key])) continue;
+    if (keyMatchesHints(key, hintCandidates)) return key;
+  }
+
+  return null;
+};
+
+const mapFavoriteRow = (
+  row: Record<string, unknown>,
+  index: number
+): FavoriteWordCard | null => {
+  const wordKey = findFavoriteColumnKey(
+    row,
+    FAVORITE_WORD_COLUMN_CANDIDATES,
+    FAVORITE_WORD_KEY_HINTS
+  );
+  if (!wordKey) return null;
+
+  const hitza = valueAsText(row[wordKey])?.trim();
+  if (!hitza) return null;
+
+  const synonymKey = findFavoriteColumnKey(
+    row,
+    FAVORITE_SYNONYM_COLUMN_CANDIDATES,
+    FAVORITE_SYNONYM_KEY_HINTS,
+    [wordKey]
+  );
+
+  const meaningKey = findFavoriteColumnKey(
+    row,
+    FAVORITE_MEANING_COLUMN_CANDIDATES,
+    FAVORITE_MEANING_KEY_HINTS,
+    [wordKey, synonymKey ?? '']
+  );
+
+  const normalizedWord = hitza.toLowerCase();
+  const sinonimoak = (synonymKey ? parseFavoriteSynonyms(row[synonymKey]) : []).filter(
+    (synonym) => synonym.trim().toLowerCase() !== normalizedWord
+  );
+  const esanahia = meaningKey ? valueAsText(row[meaningKey]) : null;
+
+  const idCandidate =
+    row.id ??
+    row.favorite_id ??
+    row.source_id ??
+    row.word_id ??
+    `${wordKey}-${index}`;
+
+  return {
+    id: String(idCandidate),
+    hitza,
+    sinonimoak,
+    esanahia,
+  };
+};
+
+const queryFavoriteRowsByUserColumn = async (
+  column: string,
+  userValues: string[]
+): Promise<Array<Record<string, unknown>> | null> => {
+  if (isFavoriteTableUnavailable || invalidFavoriteUserColumns.has(column)) {
+    return null;
+  }
+
+  if (userValues.length === 0) return [];
+
+  const runQuery = async (userValue: string, orderByCreatedAt: boolean) => {
+    let query = supabase
+      .from('user_favorite_words')
+      .select('*')
+      .eq(column, userValue)
+      .limit(FAVORITE_FETCH_LIMIT);
+
+    if (orderByCreatedAt) {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data, error } = await query;
+    return { data, error };
+  };
+
+  const queryByValue = async (
+    userValue: string
+  ): Promise<Array<Record<string, unknown>> | null> => {
+    const orderedResponse = await runQuery(userValue, true);
+    if (!orderedResponse.error) {
+      return (orderedResponse.data ?? []) as Array<Record<string, unknown>>;
+    }
+
+    const orderedMessage = orderedResponse.error.message.toLowerCase();
+    if (isFavoriteErrorForMissingTable(orderedMessage)) {
+      isFavoriteTableUnavailable = true;
+      return [];
+    }
+
+    const shouldRetryWithoutOrder =
+      isMissingColumnError(orderedMessage) && orderedMessage.includes('created_at');
+    if (shouldRetryWithoutOrder) {
+      const fallbackResponse = await runQuery(userValue, false);
+      if (fallbackResponse.error) {
+        const fallbackMessage = fallbackResponse.error.message.toLowerCase();
+        if (isFavoriteErrorForMissingTable(fallbackMessage)) {
+          isFavoriteTableUnavailable = true;
+          return [];
+        }
+        if (isDictionaryErrorForInvalidColumn(fallbackMessage)) {
+          invalidFavoriteUserColumns.add(column);
+          return null;
+        }
+        return [];
+      }
+
+      return (fallbackResponse.data ?? []) as Array<Record<string, unknown>>;
+    }
+
+    if (isDictionaryErrorForInvalidColumn(orderedMessage)) {
+      invalidFavoriteUserColumns.add(column);
+      return null;
+    }
+
+    return [];
+  };
+
+  const mergedRows: Array<Record<string, unknown>> = [];
+  const seenRows = new Set<string>();
+
+  for (const userValue of userValues) {
+    const rows = await queryByValue(userValue);
+    if (rows === null) return null;
+
+    rows.forEach((row, index) => {
+      const rowId = row.id ?? row.favorite_id ?? row.source_id ?? row.word_id;
+      const dedupeKey =
+        rowId != null
+          ? `id:${String(rowId)}`
+          : `row:${index}:${JSON.stringify(row)}`;
+      if (seenRows.has(dedupeKey)) return;
+      seenRows.add(dedupeKey);
+      mergedRows.push(row);
+    });
+  }
+
+  return mergedRows;
+};
+
+export const fetchUserFavoriteWords = async (
+  input: FavoriteUserLookupInput | string
+): Promise<FavoriteWordCard[]> => {
+  const params =
+    typeof input === 'string'
+      ? ({ userId: input } as FavoriteUserLookupInput)
+      : input;
+  const lookupValues = buildFavoriteUserLookupValues(params);
+  if (lookupValues.length === 0) return [];
+  if (isFavoriteTableUnavailable) return [];
+
+  const columnsToTry = [
+    ...(cachedFavoriteUserColumn ? [cachedFavoriteUserColumn] : []),
+    ...FAVORITE_USER_COLUMN_CANDIDATES,
+  ];
+  const visited = new Set<string>();
+
+  for (const column of columnsToTry) {
+    if (!column || visited.has(column)) continue;
+    visited.add(column);
+
+    const rows = await queryFavoriteRowsByUserColumn(column, lookupValues);
+    if (rows === null) continue;
+    if (rows.length === 0) continue;
+
+    const deduped = new Map<string, FavoriteWordCard>();
+    rows.forEach((row, index) => {
+      const card = mapFavoriteRow(row, index);
+      if (!card) return;
+      const dedupeKey = `${card.hitza.toLowerCase()}::${card.sinonimoak
+        .join('|')
+        .toLowerCase()}::${(card.esanahia ?? '').toLowerCase()}`;
+      if (!deduped.has(dedupeKey)) {
+        deduped.set(dedupeKey, card);
+      }
+    });
+
+    if (deduped.size === 0) continue;
+
+    cachedFavoriteUserColumn = column;
+    return Array.from(deduped.values());
+  }
+
+  return [];
 };
 
 export const fetchOrthographyWordPool = async (): Promise<OrthographyPoolWord[]> => {

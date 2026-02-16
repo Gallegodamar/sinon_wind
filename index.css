@@ -186,7 +186,7 @@ button:disabled {
 
 .app-shell__header-control {
   position: absolute;
-  top: calc(50% + (var(--sat) * 0.5));
+  top: 50%;
   right: calc(1.5rem + var(--sar));
   transform: translateY(-50%);
 }
@@ -202,13 +202,20 @@ button:disabled {
 .app-shell__footer {
   border-top: 1px solid var(--border-soft);
   background: rgba(250, 253, 255, 0.95);
-  padding: 0.6rem calc(1rem + var(--sar)) max(var(--sab), 0.34rem)
-    calc(1rem + var(--sal));
+  padding: 0.48rem calc(0.9rem + var(--sar)) max(var(--sab), 0.28rem)
+    calc(0.9rem + var(--sal));
 }
 
 .app-shell__footer--menu {
-  padding: 0.38rem calc(0.68rem + var(--sar)) max(calc(var(--sab) * 0.34), 0.1rem)
-    calc(0.68rem + var(--sal));
+  padding: 0.18rem calc(0.35rem + var(--sar))
+    max(calc(var(--sab) * 0.16), 0.02rem) calc(0.35rem + var(--sal));
+}
+
+.app-shell__footer--ghost {
+  border-top: 0;
+  background: transparent;
+  padding: 0 calc(0.35rem + var(--sar)) max(calc(var(--sab) * 0.16), 0.02rem)
+    calc(0.35rem + var(--sal));
 }
 
 .surface-card {
@@ -515,13 +522,18 @@ input[type='range']::-webkit-slider-thumb {
   }
 
   .app-shell__footer {
-    padding: 0.52rem calc(0.75rem + var(--sar)) max(var(--sab), 0.3rem)
-      calc(0.75rem + var(--sal));
+    padding: 0.4rem calc(0.6rem + var(--sar)) max(var(--sab), 0.24rem)
+      calc(0.6rem + var(--sal));
   }
 
   .app-shell__footer--menu {
-    padding: 0.28rem calc(0.45rem + var(--sar))
-      max(calc(var(--sab) * 0.3), 0.08rem) calc(0.45rem + var(--sal));
+    padding: 0.12rem calc(0.24rem + var(--sar))
+      max(calc(var(--sab) * 0.14), 0) calc(0.24rem + var(--sal));
+  }
+
+  .app-shell__footer--ghost {
+    padding: 0 calc(0.2rem + var(--sar)) max(calc(var(--sab) * 0.14), 0)
+      calc(0.2rem + var(--sal));
   }
 
   .dictionary-flyout {

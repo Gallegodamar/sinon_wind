@@ -1,19 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DictionaryMeaning,
   DailyLeaderboardEntry,
   DailyRunWithAnswers,
   LeaderboardPeriod,
   OrthographyPoolWord,
   PeriodLeaderboardEntry,
-  SearchResultItem,
   UserAnswerStatRow,
 } from '../../appTypes';
-import { DifficultyLevel, WordData } from '../../types';
+import { DifficultyLevel } from '../../types';
 import {
   fetchOrthographyWordPool,
+  fetchUserFavoriteWords,
   fetchWordsByLevel,
-  lookupDictionaryMeaning,
   fetchUserAnswerStatsRows,
 } from '../../lib/supabaseRepo';
 import { AppShell } from '../layout/AppShell';
@@ -21,7 +19,6 @@ import { formatLocalDate } from '../../lib/dateUtils';
 
 export type ContributeTab =
   | 'home'
-  | 'bilatu'
   | 'mailak'
   | 'ortografia'
   | 'txartelak'
@@ -32,6 +29,7 @@ type Props = {
   onBack: () => void;
   topRightControl?: React.ReactNode;
   userId: string;
+  userEmail?: string | null;
   activeTab: ContributeTab;
   setActiveTab: (tab: ContributeTab) => void;
   startDailyCompetition: () => void;
@@ -51,25 +49,11 @@ type Props = {
   difficulty: DifficultyLevel;
   setDifficulty: (difficulty: DifficultyLevel) => void;
   startNewGame: (isSolo?: boolean) => void;
-  searchTerm: string;
-  setSearchTerm: (term: string) => void;
-  isSearching: boolean;
-  searchResults: SearchResultItem[];
 };
 
 const HomeIcon = () => (
   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
     <path d="M10 3l7 6v8a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1V9l7-6z" />
-  </svg>
-);
-
-const SearchIcon = () => (
-  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-    <path
-      fillRule="evenodd"
-      d="M8.5 3a5.5 5.5 0 014.375 8.834l3.646 3.646a1 1 0 01-1.414 1.414l-3.646-3.646A5.5 5.5 0 118.5 3zm0 2a3.5 3.5 0 100 7 3.5 3.5 0 000-7z"
-      clipRule="evenodd"
-    />
   </svg>
 );
 
@@ -193,6 +177,15 @@ type OrthographySession = {
   questions: OrthographyQuestion[];
   answers: number[];
   currentIndex: number;
+};
+
+type FlashDeckMode = 'level' | 'favorites';
+
+type FlashCardItem = {
+  id: string;
+  hitza: string;
+  sinonimoak: string[];
+  esanahia: string | null;
 };
 
 const ORTHOGRAPHY_RULES: ReadonlyArray<readonly [string, string]> = [
@@ -480,7 +473,6 @@ const tabs: Array<{ id: ContributeTab; label: string; icon: JSX.Element }> = [
   { id: 'mailak', label: 'Sinonimoak', icon: <CheckIcon /> },
   { id: 'ortografia', label: 'Ortografia', icon: <SpellIcon /> },
   { id: 'txartelak', label: 'Txartelak', icon: <CardsIcon /> },
-  { id: 'bilatu', label: 'Bilatu', icon: <SearchIcon /> },
   { id: 'eguneko', label: 'Sailkapena', icon: <CrownIcon /> },
   { id: 'estatistikak', label: 'Estatistikak', icon: <StatsIcon /> },
 ];
@@ -510,12 +502,6 @@ const homeShortcuts: Array<{
     accentClass: 'from-emerald-500/15 to-teal-500/15 text-emerald-700',
   },
   {
-    id: 'bilatu',
-    label: 'Bilatu',
-    icon: <SearchIcon />,
-    accentClass: 'from-indigo-500/15 to-blue-500/15 text-indigo-700',
-  },
-  {
     id: 'eguneko',
     label: 'Sailkapena',
     icon: <CrownIcon />,
@@ -529,20 +515,11 @@ const homeShortcuts: Array<{
   },
 ];
 
-const DICTIONARY_FLYOUT_MAX_WIDTH = 360;
-
-type DictionaryFlyoutState = DictionaryMeaning & {
-  top: number;
-  left: number;
-  fallbackUrl?: string;
-};
-
-type SearchMode = 'synonyms' | 'meaning';
-
 export const ContributeScreen: React.FC<Props> = ({
   onBack,
   topRightControl,
   userId,
+  userEmail,
   activeTab,
   setActiveTab,
   startDailyCompetition,
@@ -562,52 +539,26 @@ export const ContributeScreen: React.FC<Props> = ({
   difficulty,
   setDifficulty,
   startNewGame,
-  searchTerm,
-  setSearchTerm,
-  isSearching,
-  searchResults,
 }) => {
+  const [flashDeckMode, setFlashDeckMode] = useState<FlashDeckMode>('level');
   const [flashLevel, setFlashLevel] = useState<DifficultyLevel>(difficulty);
-  const [flashDeck, setFlashDeck] = useState<WordData[]>([]);
+  const [flashDeck, setFlashDeck] = useState<FlashCardItem[]>([]);
   const [flashIndex, setFlashIndex] = useState(0);
   const [flashFlipped, setFlashFlipped] = useState(false);
   const [flashLoading, setFlashLoading] = useState(false);
   const [flashError, setFlashError] = useState<string | null>(null);
-  const [flashLoadedLevel, setFlashLoadedLevel] = useState<DifficultyLevel | null>(
-    null
-  );
+  const [flashLoadedKey, setFlashLoadedKey] = useState<string | null>(null);
   const [flashStats, setFlashStats] = useState({ done: 0, knew: 0 });
   const [orthographySession, setOrthographySession] =
     useState<OrthographySession | null>(null);
   const [isOrthographyLoading, setIsOrthographyLoading] = useState(false);
   const [orthographyError, setOrthographyError] = useState<string | null>(null);
-  const [dictionaryFlyout, setDictionaryFlyout] = useState<DictionaryFlyoutState | null>(
-    null
-  );
-  const [isMeaningLoading, setIsMeaningLoading] = useState(false);
-  const [searchMode, setSearchMode] = useState<SearchMode>('synonyms');
-  const [dictionarySearchResult, setDictionarySearchResult] =
-    useState<DictionaryMeaning | null>(null);
-  const [isDictionarySearchLoading, setIsDictionarySearchLoading] = useState(false);
-  const [dictionarySearchFallbackUrl, setDictionarySearchFallbackUrl] = useState<
-    string | null
-  >(null);
   const [statsDate, setStatsDate] = useState(() => formatLocalDate(new Date()));
   const [statsRows, setStatsRows] = useState<UserAnswerStatRow[]>([]);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const dictionaryFlyoutRef = useRef<HTMLDivElement | null>(null);
-  const dictionaryRequestIdRef = useRef(0);
-  const dictionarySearchRequestIdRef = useRef(0);
   const statsLoadedUserRef = useRef<string | null>(null);
   const orthographyLoadedKeyRef = useRef<string | null>(null);
-
-  const levelColors: Record<number, string> = {
-    1: 'border-sky-200 bg-sky-50 text-sky-700',
-    2: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    3: 'border-amber-200 bg-amber-50 text-amber-700',
-    4: 'border-rose-200 bg-rose-50 text-rose-700',
-  };
 
   const periodRows =
     competitionPeriod === 'weekly' ? weeklyLeaderboard : monthlyLeaderboard;
@@ -677,26 +628,74 @@ export const ContributeScreen: React.FC<Props> = ({
       ? Math.round((orthographyCorrectCount / orthographyAnsweredCount) * 100)
       : 0;
 
-  const loadFlashDeck = useCallback(async (level: DifficultyLevel) => {
+  const resetFlashProgress = useCallback(() => {
+    setFlashIndex(0);
+    setFlashFlipped(false);
+    setFlashStats({ done: 0, knew: 0 });
+  }, []);
+
+  const loadLevelFlashDeck = useCallback(
+    async (level: DifficultyLevel) => {
+      setFlashLoading(true);
+      setFlashError(null);
+      try {
+        const words = await fetchWordsByLevel(level);
+        if (!words.length) {
+          setFlashDeck([]);
+          setFlashError('Ez dago txarteletarako hitzik maila honetan.');
+          setFlashLoadedKey(`level:${level}`);
+          return;
+        }
+
+        const cards: FlashCardItem[] = words.map((word) => ({
+          id: String(word.id),
+          hitza: word.hitza,
+          sinonimoak: word.sinonimoak,
+          esanahia: null,
+        }));
+
+        setFlashDeck(shuffle(cards));
+        resetFlashProgress();
+        setFlashLoadedKey(`level:${level}`);
+      } finally {
+        setFlashLoading(false);
+      }
+    },
+    [resetFlashProgress]
+  );
+
+  const loadFavoriteFlashDeck = useCallback(async () => {
     setFlashLoading(true);
     setFlashError(null);
     try {
-      const words = await fetchWordsByLevel(level);
-      if (!words.length) {
+      if (!userId) {
         setFlashDeck([]);
-        setFlashError('Ez dago txarteletarako hitzik maila honetan.');
-        setFlashLoadedLevel(level);
+        setFlashError('Saioa hasi behar duzu gogoko hitzak ikusteko.');
+        setFlashLoadedKey('favorites:anon');
         return;
       }
-      setFlashDeck(shuffle(words));
-      setFlashIndex(0);
-      setFlashFlipped(false);
-      setFlashStats({ done: 0, knew: 0 });
-      setFlashLoadedLevel(level);
+
+      const favoritesCacheKey = `favorites:${userId || 'anon'}:${(userEmail ?? '')
+        .trim()
+        .toLowerCase()}`;
+      const favoriteCards = await fetchUserFavoriteWords({
+        userId,
+        userEmail,
+      });
+      if (!favoriteCards.length) {
+        setFlashDeck([]);
+        setFlashError('Ez duzu gogoko hitzik oraindik.');
+        setFlashLoadedKey(favoritesCacheKey);
+        return;
+      }
+
+      setFlashDeck(shuffle(favoriteCards));
+      resetFlashProgress();
+      setFlashLoadedKey(favoritesCacheKey);
     } finally {
       setFlashLoading(false);
     }
-  }, []);
+  }, [resetFlashProgress, userEmail, userId]);
 
   useEffect(() => {
     setFlashLevel(difficulty);
@@ -704,9 +703,32 @@ export const ContributeScreen: React.FC<Props> = ({
 
   useEffect(() => {
     if (activeTab !== 'txartelak') return;
-    if (flashLoadedLevel === flashLevel) return;
-    void loadFlashDeck(flashLevel);
-  }, [activeTab, flashLevel, flashLoadedLevel, loadFlashDeck]);
+    if (flashDeckMode === 'level') {
+      const nextKey = `level:${flashLevel}`;
+      if (flashLoadedKey === nextKey) return;
+      void loadLevelFlashDeck(flashLevel);
+      return;
+    }
+
+    const nextKey = `favorites:${userId || 'anon'}:${(userEmail ?? '')
+      .trim()
+      .toLowerCase()}`;
+    if (flashLoadedKey === nextKey) return;
+    void loadFavoriteFlashDeck();
+  }, [
+    activeTab,
+    flashDeckMode,
+    flashLevel,
+    flashLoadedKey,
+    loadFavoriteFlashDeck,
+    loadLevelFlashDeck,
+    userEmail,
+    userId,
+  ]);
+
+  useEffect(() => {
+    setFlashLoadedKey(null);
+  }, [userEmail, userId]);
 
   useEffect(() => {
     orthographyLoadedKeyRef.current = null;
@@ -877,149 +899,6 @@ export const ContributeScreen: React.FC<Props> = ({
       };
     });
   }, []);
-
-  const getExternalDictionaryUrl = useCallback(
-    (term: string) => `https://hiztegiak.elhuyar.eus/eu/${encodeURIComponent(term)}`,
-    []
-  );
-
-  const openExternalDictionary = useCallback(
-    (term: string): boolean => {
-      const openedWindow = window.open(
-        getExternalDictionaryUrl(term),
-        '_blank',
-        'noopener,noreferrer'
-      );
-      return Boolean(openedWindow);
-    },
-    [getExternalDictionaryUrl]
-  );
-
-  useEffect(() => {
-    if (searchMode === 'synonyms') return;
-    setDictionaryFlyout(null);
-  }, [searchMode]);
-
-  useEffect(() => {
-    if (activeTab !== 'bilatu' || searchMode !== 'meaning') {
-      dictionarySearchRequestIdRef.current += 1;
-      setDictionarySearchResult(null);
-      setDictionarySearchFallbackUrl(null);
-      setIsDictionarySearchLoading(false);
-      return;
-    }
-
-    const normalized = searchTerm.trim();
-    if (normalized.length < 2) {
-      dictionarySearchRequestIdRef.current += 1;
-      setDictionarySearchResult(null);
-      setDictionarySearchFallbackUrl(null);
-      setIsDictionarySearchLoading(false);
-      return;
-    }
-
-    const requestId = ++dictionarySearchRequestIdRef.current;
-    const timer = setTimeout(async () => {
-      setIsDictionarySearchLoading(true);
-      try {
-        const meaning = await lookupDictionaryMeaning(normalized);
-        if (requestId !== dictionarySearchRequestIdRef.current) return;
-
-        if (meaning) {
-          setDictionarySearchResult(meaning);
-          setDictionarySearchFallbackUrl(null);
-          return;
-        }
-
-        setDictionarySearchResult(null);
-        setDictionarySearchFallbackUrl(getExternalDictionaryUrl(normalized));
-      } catch {
-        if (requestId !== dictionarySearchRequestIdRef.current) return;
-        setDictionarySearchResult(null);
-        setDictionarySearchFallbackUrl(getExternalDictionaryUrl(normalized));
-      } finally {
-        if (requestId !== dictionarySearchRequestIdRef.current) return;
-        setIsDictionarySearchLoading(false);
-      }
-    }, 360);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [activeTab, getExternalDictionaryUrl, searchMode, searchTerm]);
-
-  const handleMeaningLookup = useCallback(
-    async (term: string, event: React.MouseEvent<HTMLElement>) => {
-      const normalized = term.trim();
-      if (!normalized) return;
-
-      const targetRect = event.currentTarget.getBoundingClientRect();
-      const flyoutWidth = Math.min(
-        DICTIONARY_FLYOUT_MAX_WIDTH,
-        Math.max(220, window.innerWidth - 24)
-      );
-      const left = Math.min(
-        window.innerWidth - flyoutWidth - 12,
-        Math.max(12, targetRect.left)
-      );
-      const top = Math.min(
-        window.innerHeight - 150,
-        Math.max(12, targetRect.bottom + 10)
-      );
-
-      const requestId = ++dictionaryRequestIdRef.current;
-      setDictionaryFlyout({ hitza: normalized, esanahia: '', top, left });
-      setIsMeaningLoading(true);
-
-      try {
-        const meaning = await lookupDictionaryMeaning(normalized);
-        if (requestId !== dictionaryRequestIdRef.current) return;
-
-        if (meaning) {
-          setDictionaryFlyout({ ...meaning, top, left, fallbackUrl: undefined });
-          return;
-        }
-
-        const opened = openExternalDictionary(normalized);
-        if (opened) {
-          setDictionaryFlyout(null);
-        } else {
-          setDictionaryFlyout({
-            hitza: normalized,
-            esanahia: 'Ez da aurkitu tokiko hiztegian.',
-            top,
-            left,
-            fallbackUrl: getExternalDictionaryUrl(normalized),
-          });
-        }
-      } catch {
-        if (requestId !== dictionaryRequestIdRef.current) return;
-        const opened = openExternalDictionary(normalized);
-        if (opened) {
-          setDictionaryFlyout(null);
-        } else {
-          setDictionaryFlyout({
-            hitza: normalized,
-            esanahia: 'Ezin izan da tokiko hiztegia kontsultatu.',
-            top,
-            left,
-            fallbackUrl: getExternalDictionaryUrl(normalized),
-          });
-        }
-      } finally {
-        if (requestId !== dictionaryRequestIdRef.current) return;
-        setIsMeaningLoading(false);
-      }
-    },
-    [getExternalDictionaryUrl, openExternalDictionary]
-  );
-
-  useEffect(() => {
-    if (activeTab === 'bilatu') return;
-    dictionaryRequestIdRef.current += 1;
-    setIsMeaningLoading(false);
-    setDictionaryFlyout(null);
-  }, [activeTab]);
 
   const hasTimestampData = useMemo(
     () => statsRows.some((row) => Boolean(row.event_at)),
@@ -1249,30 +1128,6 @@ export const ContributeScreen: React.FC<Props> = ({
       }));
   }, [statsRows]);
 
-  useEffect(() => {
-    if (!dictionaryFlyout) return;
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target;
-      if (!dictionaryFlyoutRef.current || !(target instanceof Node)) return;
-      if (dictionaryFlyoutRef.current.contains(target)) return;
-      setDictionaryFlyout(null);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setDictionaryFlyout(null);
-    };
-
-    window.addEventListener('mousedown', handleOutsideClick);
-    window.addEventListener('keydown', handleEscape);
-
-    return () => {
-      window.removeEventListener('mousedown', handleOutsideClick);
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [dictionaryFlyout]);
-
   return (
     <AppShell
       topRightControl={topRightControl}
@@ -1299,7 +1154,7 @@ export const ContributeScreen: React.FC<Props> = ({
       }
       footer={
         <nav
-          className="grid gap-1.5 sm:gap-2"
+          className="grid gap-1 sm:gap-1.5"
           style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
         >
           {tabs.map((tab) => {
@@ -1310,7 +1165,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 onClick={() => setActiveTab(tab.id)}
                 aria-label={tab.label}
                 className={
-                  'group rounded-xl border px-1.5 py-1.5 transition duration-200 sm:rounded-2xl sm:px-2 sm:py-2 ' +
+                  'group rounded-xl border px-1 py-1 transition duration-200 sm:rounded-2xl sm:px-1.5 sm:py-1.5 ' +
                   (isActive
                     ? 'border-teal-300 bg-gradient-to-br from-teal-50 to-cyan-50 text-teal-700 shadow-[0_10px_18px_-14px_rgba(13,148,136,0.8)]'
                     : 'border-slate-200/70 bg-white/80 text-slate-400 hover:border-slate-300 hover:text-slate-700')
@@ -1318,7 +1173,7 @@ export const ContributeScreen: React.FC<Props> = ({
               >
                 <div
                   className={
-                    'mx-auto flex h-6 w-6 items-center justify-center rounded-lg transition sm:h-7 sm:w-7 sm:rounded-xl ' +
+                    'mx-auto flex h-5 w-5 items-center justify-center rounded-lg transition sm:h-6 sm:w-6 sm:rounded-xl ' +
                     (isActive
                       ? 'bg-teal-100/80'
                       : 'bg-slate-100/70 group-hover:bg-slate-200/70')
@@ -1326,7 +1181,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 >
                   {tab.icon}
                 </div>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] max-[900px]:hidden">
+                <p className="mt-0 text-[10px] font-bold uppercase tracking-[0.08em] max-[900px]:hidden">
                   {tab.label}
                 </p>
               </button>
@@ -1608,28 +1463,78 @@ export const ContributeScreen: React.FC<Props> = ({
       {activeTab === 'txartelak' && (
         <div className="space-y-4">
           <section className="surface-card p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {[1, 2, 3, 4].map((level) => (
-                <button
-                  key={level}
-                  onClick={() => setFlashLevel(level as DifficultyLevel)}
-                  className={
-                    'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
-                    (flashLevel === level
-                      ? 'border-teal-500 bg-teal-500 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
-                  }
-                >
-                  L{level}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => void loadFlashDeck(flashLevel)}
-                className="btn-secondary !px-3 !py-2 !text-xs"
+                type="button"
+                onClick={() => {
+                  setFlashDeckMode('level');
+                  setFlashLoadedKey(null);
+                }}
+                className={
+                  'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
+                  (flashDeckMode === 'level'
+                    ? 'border-teal-500 bg-teal-500 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+                }
               >
-                Sorta berritu
+                Mailaka
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFlashDeckMode('favorites');
+                  setFlashLoadedKey(null);
+                }}
+                className={
+                  'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
+                  (flashDeckMode === 'favorites'
+                    ? 'border-teal-500 bg-teal-500 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+                }
+              >
+                Favoritoak
               </button>
             </div>
+
+            {flashDeckMode === 'level' ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {[1, 2, 3, 4].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setFlashLevel(level as DifficultyLevel)}
+                    className={
+                      'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
+                      (flashLevel === level
+                        ? 'border-teal-500 bg-teal-500 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+                    }
+                  >
+                    L{level}
+                  </button>
+                ))}
+                <button
+                  onClick={() => void loadLevelFlashDeck(flashLevel)}
+                  className="btn-secondary !px-3 !py-2 !text-xs"
+                >
+                  Sorta berritu
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Supabase-ko gogoko hitzak
+                </p>
+                <button
+                  onClick={() => {
+                    setFlashLoadedKey(null);
+                    void loadFavoriteFlashDeck();
+                  }}
+                  className="btn-secondary !px-3 !py-2 !text-xs"
+                >
+                  Zerrenda berritu
+                </button>
+              </div>
+            )}
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1680,21 +1585,32 @@ export const ContributeScreen: React.FC<Props> = ({
                     </span>
 
                     <span className="anki-card-face anki-card-face--back">
-                      <div className="flex flex-wrap justify-center gap-2">
+                      <div className="space-y-3">
                         {currentFlashCard.sinonimoak.length > 0 ? (
-                          currentFlashCard.sinonimoak.map((synonym, idx) => (
-                            <span
-                              key={`${synonym}-${idx}`}
-                              className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-base font-bold text-teal-700 md:text-lg"
-                            >
-                              {synonym}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-slate-500">
-                            Ez dago sinonimorik.
-                          </span>
-                        )}
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {currentFlashCard.sinonimoak.map((synonym, idx) => (
+                              <span
+                                key={`${synonym}-${idx}`}
+                                className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-base font-bold text-teal-700 md:text-lg"
+                              >
+                                {synonym}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {currentFlashCard.esanahia ? (
+                          <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold leading-relaxed text-slate-700">
+                            {currentFlashCard.esanahia}
+                          </p>
+                        ) : null}
+
+                        {currentFlashCard.sinonimoak.length === 0 &&
+                        !currentFlashCard.esanahia ? (
+                          <p className="text-sm text-slate-500">
+                            Ez dago txartel honetarako edukirik.
+                          </p>
+                        ) : null}
                       </div>
                     </span>
                   </button>
@@ -1725,196 +1641,6 @@ export const ContributeScreen: React.FC<Props> = ({
               </div>
             )}
           </section>
-        </div>
-      )}
-
-      {activeTab === 'bilatu' && (
-        <div className="space-y-4">
-          <section className="surface-card p-4">
-            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-              Bilaketa
-            </label>
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSearchMode('synonyms')}
-                className={
-                  'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
-                  (searchMode === 'synonyms'
-                    ? 'border-teal-500 bg-teal-500 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
-                }
-              >
-                Sinonimoak
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchMode('meaning')}
-                className={
-                  'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
-                  (searchMode === 'meaning'
-                    ? 'border-teal-500 bg-teal-500 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
-                }
-              >
-                Esanahia
-              </button>
-            </div>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={
-                  searchMode === 'synonyms'
-                    ? 'Idatzi hitza edo sinonimoa...'
-                    : 'Idatzi hitza...'
-                }
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="input-shell !py-3 !pl-11 !pr-10"
-              />
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <SearchIcon />
-              </span>
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.7 7.3a1 1 0 00-1.4 1.4L8.6 10l-1.3 1.3a1 1 0 101.4 1.4L10 11.4l1.3 1.3a1 1 0 001.4-1.4L11.4 10l1.3-1.3a1 1 0 10-1.4-1.4L10 8.6 8.7 7.3z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </section>
-
-          {searchMode === 'synonyms' ? (
-            <>
-              {isSearching ? (
-                <p className="text-sm font-semibold text-slate-500">Bilatzen...</p>
-              ) : searchResults.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  {searchTerm.length < 2
-                    ? 'Idatzi gutxienez 2 letra bilatzeko.'
-                    : 'Ez da emaitzarik aurkitu.'}
-                </p>
-              ) : (
-                <div className="grid gap-3">
-                  {searchResults.map((word, index) => (
-                    <article key={`${word.id}-${index}`} className="surface-card p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            void handleMeaningLookup(word.hitza, event);
-                          }}
-                          className="border-0 bg-transparent p-0 font-display text-left text-2xl font-semibold text-slate-900 transition hover:text-teal-700"
-                        >
-                          {word.hitza}
-                        </button>
-                        <span
-                          className={
-                            'rounded-full border px-3 py-1 text-xs font-bold uppercase ' +
-                            (levelColors[word.level] ||
-                              'border-slate-200 bg-slate-50 text-slate-600')
-                          }
-                        >
-                          L{word.level}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {word.sinonimoak.map((synonym, synonymIndex) => (
-                          <button
-                            type="button"
-                            key={`${synonym}-${synonymIndex}`}
-                            onClick={(event) => {
-                              void handleMeaningLookup(synonym, event);
-                            }}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-700"
-                          >
-                            {synonym}
-                          </button>
-                        ))}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-
-              {dictionaryFlyout ? (
-                <div
-                  ref={dictionaryFlyoutRef}
-                  className="dictionary-flyout"
-                  style={{ top: `${dictionaryFlyout.top}px`, left: `${dictionaryFlyout.left}px` }}
-                  role="dialog"
-                  aria-label={`${dictionaryFlyout.hitza} esanahia`}
-                >
-                  <div className="dictionary-flyout__header">
-                    <p className="font-display text-lg font-semibold text-slate-900">
-                      {dictionaryFlyout.hitza}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setDictionaryFlyout(null)}
-                      className="dictionary-flyout__close"
-                      aria-label="Itxi"
-                    >
-                      X
-                    </button>
-                  </div>
-                  <p className="dictionary-flyout__body">
-                    {isMeaningLoading ? 'Esanahia bilatzen...' : dictionaryFlyout.esanahia}
-                  </p>
-                  {!isMeaningLoading && dictionaryFlyout.fallbackUrl ? (
-                    <a
-                      href={dictionaryFlyout.fallbackUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="dictionary-flyout__link"
-                    >
-                      Ireki Elhuyar-en
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : searchTerm.trim().length < 2 ? (
-            <p className="text-sm text-slate-500">
-              Idatzi gutxienez 2 letra esanahia bilatzeko.
-            </p>
-          ) : isDictionarySearchLoading ? (
-            <p className="text-sm font-semibold text-slate-500">Esanahia bilatzen...</p>
-          ) : dictionarySearchResult ? (
-            <article className="surface-card p-4 md:p-5">
-              <h3 className="font-display text-3xl font-semibold text-slate-900">
-                {dictionarySearchResult.hitza}
-              </h3>
-              <p className="mt-3 text-base leading-relaxed text-slate-700 md:text-lg">
-                {dictionarySearchResult.esanahia}
-              </p>
-            </article>
-          ) : (
-            <article className="surface-card surface-card--muted p-4 md:p-5">
-              <p className="text-sm font-semibold text-slate-600">
-                Ez da esanahirik aurkitu tokiko hiztegian.
-              </p>
-              {dictionarySearchFallbackUrl ? (
-                <a
-                  href={dictionarySearchFallbackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="dictionary-flyout__link mt-3"
-                >
-                  Ireki Elhuyar-en
-                </a>
-              ) : null}
-            </article>
-          )}
         </div>
       )}
 
