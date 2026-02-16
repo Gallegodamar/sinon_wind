@@ -3,7 +3,7 @@
   "name": "Sinonimoen Jokoa",
   "short_name": "Sinonimoak",
   "description": "Euskarazko sinonimoen jokoa.",
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#2CA59A",
   "theme_color": "#2CA59A",
