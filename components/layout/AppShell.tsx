@@ -5,6 +5,7 @@ type AppShellProps = {
   footer?: React.ReactNode;
   children: React.ReactNode;
   contentClassName?: string;
+  footerClassName?: string;
   topRightControl?: React.ReactNode;
 };
 
@@ -13,6 +14,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   footer,
   children,
   contentClassName = '',
+  footerClassName = '',
   topRightControl,
 }) => {
   return (
@@ -33,7 +35,9 @@ export const AppShell: React.FC<AppShellProps> = ({
         <main className={`app-shell__content custom-scrollbar ${contentClassName}`.trim()}>
           {children}
         </main>
-        {footer ? <footer className="app-shell__footer">{footer}</footer> : null}
+        {footer ? (
+          <footer className={`app-shell__footer ${footerClassName}`.trim()}>{footer}</footer>
+        ) : null}
       </div>
     </div>
   );

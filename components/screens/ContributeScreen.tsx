@@ -611,13 +611,6 @@ export const ContributeScreen: React.FC<Props> = ({
 
   const periodRows =
     competitionPeriod === 'weekly' ? weeklyLeaderboard : monthlyLeaderboard;
-  const handleHeaderBack = () => {
-    if (activeTab === 'home') {
-      onBack();
-      return;
-    }
-    setActiveTab('home');
-  };
 
   const renderRankBadge = (rank: number) => {
     const medal = getRankMedalStyle(rank);
@@ -1283,14 +1276,19 @@ export const ContributeScreen: React.FC<Props> = ({
   return (
     <AppShell
       topRightControl={topRightControl}
+      footerClassName="app-shell__footer--menu"
       header={
         <div className="flex w-full items-center justify-between gap-3">
-          <button
-            onClick={handleHeaderBack}
-            className="btn-ghost inline-flex min-w-[5.25rem] items-center justify-start"
-          >
-            {activeTab === 'home' ? 'Erronka' : 'Atzera'}
-          </button>
+          {activeTab === 'home' ? (
+            <div className="w-[5.25rem]" />
+          ) : (
+            <button
+              onClick={() => setActiveTab('home')}
+              className="btn-ghost inline-flex min-w-[5.25rem] items-center justify-start"
+            >
+              Atzera
+            </button>
+          )}
           <div className="text-center">
             <h2 className="font-display text-lg font-semibold text-slate-900">
               Menua
@@ -1301,7 +1299,7 @@ export const ContributeScreen: React.FC<Props> = ({
       }
       footer={
         <nav
-          className="grid gap-2"
+          className="grid gap-1.5 sm:gap-2"
           style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
         >
           {tabs.map((tab) => {
@@ -1312,7 +1310,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 onClick={() => setActiveTab(tab.id)}
                 aria-label={tab.label}
                 className={
-                  'group rounded-2xl border px-2 py-2.5 transition duration-200 ' +
+                  'group rounded-xl border px-1.5 py-1.5 transition duration-200 sm:rounded-2xl sm:px-2 sm:py-2 ' +
                   (isActive
                     ? 'border-teal-300 bg-gradient-to-br from-teal-50 to-cyan-50 text-teal-700 shadow-[0_10px_18px_-14px_rgba(13,148,136,0.8)]'
                     : 'border-slate-200/70 bg-white/80 text-slate-400 hover:border-slate-300 hover:text-slate-700')
@@ -1320,7 +1318,7 @@ export const ContributeScreen: React.FC<Props> = ({
               >
                 <div
                   className={
-                    'mx-auto flex h-7 w-7 items-center justify-center rounded-xl transition ' +
+                    'mx-auto flex h-6 w-6 items-center justify-center rounded-lg transition sm:h-7 sm:w-7 sm:rounded-xl ' +
                     (isActive
                       ? 'bg-teal-100/80'
                       : 'bg-slate-100/70 group-hover:bg-slate-200/70')
@@ -1328,7 +1326,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 >
                   {tab.icon}
                 </div>
-                <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] max-[900px]:hidden">
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] max-[900px]:hidden">
                   {tab.label}
                 </p>
               </button>

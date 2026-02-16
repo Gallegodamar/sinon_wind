@@ -186,7 +186,7 @@ button:disabled {
 
 .app-shell__header-control {
   position: absolute;
-  top: calc(50% + 0.18rem);
+  top: calc(50% + (var(--sat) * 0.5));
   right: calc(1.5rem + var(--sar));
   transform: translateY(-50%);
 }
@@ -204,6 +204,11 @@ button:disabled {
   background: rgba(250, 253, 255, 0.95);
   padding: 0.6rem calc(1rem + var(--sar)) max(var(--sab), 0.34rem)
     calc(1rem + var(--sal));
+}
+
+.app-shell__footer--menu {
+  padding: 0.38rem calc(0.68rem + var(--sar)) max(calc(var(--sab) * 0.34), 0.1rem)
+    calc(0.68rem + var(--sal));
 }
 
 .surface-card {
@@ -502,7 +507,6 @@ input[type='range']::-webkit-slider-thumb {
   }
 
   .app-shell__header-control {
-    top: calc(50% + 0.14rem);
     right: calc(1rem + var(--sar));
   }
 
@@ -513,6 +517,11 @@ input[type='range']::-webkit-slider-thumb {
   .app-shell__footer {
     padding: 0.52rem calc(0.75rem + var(--sar)) max(var(--sab), 0.3rem)
       calc(0.75rem + var(--sal));
+  }
+
+  .app-shell__footer--menu {
+    padding: 0.28rem calc(0.45rem + var(--sar))
+      max(calc(var(--sab) * 0.3), 0.08rem) calc(0.45rem + var(--sal));
   }
 
   .dictionary-flyout {
