@@ -2051,9 +2051,23 @@ export const ContributeScreen: React.FC<Props> = ({
                       Datarik gabe ezin da grafikoa erakutsi.
                     </p>
                   ) : (
-                    <div className="mt-4 overflow-x-auto pb-1">
-                      <div className="flex h-44 min-w-max items-end gap-1.5">
-                        {monthlySeenBars.map((point) => {
+                    <div
+                      className="mt-4 grid h-44 items-end gap-1"
+                      style={{
+                        gridTemplateColumns:
+                          monthlySeenBars.length > 0
+                            ? `repeat(${monthlySeenBars.length}, minmax(0, 1fr))`
+                            : undefined,
+                      }}
+                    >
+                      {monthlySeenBars.map((point, index) => {
+                          const labelStep =
+                            monthlySeenBars.length > 14
+                              ? Math.ceil(monthlySeenBars.length / 14)
+                              : 1;
+                          const shouldShowLabel =
+                            index === monthlySeenBars.length - 1 ||
+                            index % labelStep === 0;
                           const ratio =
                             monthlySeenMax > 0 ? point.count / monthlySeenMax : 0;
                           const heightPercent =
@@ -2062,7 +2076,7 @@ export const ContributeScreen: React.FC<Props> = ({
                           return (
                             <div
                               key={`monthly-${point.key}`}
-                              className="flex w-5 flex-col items-center gap-1"
+                              className="flex min-w-0 flex-col items-center gap-1"
                             >
                               <div className="flex h-36 w-full items-end">
                                 <div
@@ -2071,13 +2085,18 @@ export const ContributeScreen: React.FC<Props> = ({
                                   title={`${point.key}: ${point.count}`}
                                 />
                               </div>
-                              <span className="text-[9px] font-semibold text-slate-500">
-                                {point.label}
-                              </span>
+                              {shouldShowLabel ? (
+                                <span className="truncate text-[9px] font-semibold text-slate-500">
+                                  {point.label}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-transparent select-none">
+                                  .
+                                </span>
+                              )}
                             </div>
                           );
                         })}
-                      </div>
                     </div>
                   )}
                 </article>

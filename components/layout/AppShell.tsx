@@ -16,7 +16,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   topRightControl,
 }) => {
   return (
-    <div className="min-h-[100dvh] w-full p-4 safe-pt safe-px safe-pb">
+    <div className="app-shell-frame">
       <div className="app-shell">
         {header ? (
           <header
