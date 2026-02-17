@@ -55,24 +55,24 @@ export const SummaryScreen: React.FC<Props> = ({
         {isSoloLoggedIn ? (
           <section className="surface-card surface-card--muted p-6">
             <div className="grid gap-6 lg:grid-cols-[220px_1fr] lg:items-center">
-              <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-full border-8 border-slate-100 bg-white shadow-inner">
+              <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-full border-8 border-sky-100 bg-white shadow-inner">
                 <div className="text-center">
-                  <p className="font-display text-5xl font-semibold text-teal-700">
+                  <p className="font-display text-5xl font-semibold text-sky-700">
                     {percentage.toFixed(0)}%
                   </p>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-emerald-700">Puntuak</p>
-                  <p className="font-display mt-1 text-3xl font-semibold text-emerald-700">
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-center">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-sky-700">Puntuak</p>
+                  <p className="font-display mt-1 text-3xl font-semibold text-sky-700">
                     {score}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-center">
                   <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-cyan-700">Asmatuak</p>
-                  <p className="font-display mt-1 text-3xl font-semibold text-cyan-800">
+                  <p className="font-display mt-1 text-3xl font-semibold text-cyan-700">
                     {player.correctAnswers}
                   </p>
                 </div>
@@ -115,7 +115,7 @@ export const SummaryScreen: React.FC<Props> = ({
                         {p.name}
                       </td>
                       <td className="p-3 text-center">
-                        <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-bold text-teal-700">
+                        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-700">
                           {p.score}
                         </span>
                       </td>
@@ -143,7 +143,7 @@ export const SummaryScreen: React.FC<Props> = ({
           <button onClick={onReview} className="btn-secondary py-3 sm:col-span-1">
             Partidako hitzak
           </button>
-          <button onClick={onHome} className="btn-ghost border border-slate-200 py-3 text-slate-600 sm:col-span-1">
+          <button onClick={onHome} className="btn-ghost border border-sky-200 py-3 text-slate-600 sm:col-span-1">
             Hasiera
           </button>
         </section>

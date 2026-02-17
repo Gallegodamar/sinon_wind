@@ -12,7 +12,7 @@ import {
   OrthographyPoolWord,
   FavoriteWordCard,
 } from '../appTypes';
-import { supabase, supabasePublic } from '../supabase';
+import { supabase } from '../supabase';
 import { normalizeSynonyms } from './gameLogic';
 import { formatLocalDate, getLocalDayUtcRange } from './dateUtils';
 
@@ -68,11 +68,35 @@ const DICTIONARY_MEANING_COLUMN_CANDIDATES = [
   'glosa',
 ];
 
+const DICTIONARY_DEFINITION_TABLE = 'diccionario_definiciones';
+
+const DICTIONARY_DEFINITION_WORD_COLUMN_CANDIDATES = [
+  ...DICTIONARY_WORD_COLUMN_CANDIDATES,
+  'hitz',
+  'word_text',
+  'word_value',
+  'lemma_text',
+];
+
+const DICTIONARY_DEFINITION_MEANING_COLUMN_CANDIDATES = [
+  ...DICTIONARY_MEANING_COLUMN_CANDIDATES,
+  'definition_text',
+  'meaning_text',
+  'desc',
+  'description',
+  'gloss',
+];
+
 let cachedDictionaryWordColumn: string | null = null;
 let cachedDictionaryMeaningColumn: string | null = null;
 let cachedDictionaryTextColumns: string[] | null = null;
 let isDictionaryTableUnavailable = false;
 const invalidDictionaryWordColumns = new Set<string>();
+let cachedDictionaryDefinitionWordColumn: string | null = null;
+let cachedDictionaryDefinitionMeaningColumns: string[] | null = null;
+let isDictionaryDefinitionTableUnavailable = false;
+const invalidDictionaryDefinitionWordColumns = new Set<string>();
+const dictionaryDefinitionsCacheByWord = new Map<string, string[]>();
 
 const DICTIONARY_WORD_KEY_HINTS = [
   'hitz',
@@ -97,6 +121,24 @@ const DICTIONARY_MEANING_KEY_HINTS = [
   'glosa',
 ];
 
+const DICTIONARY_DEFINITION_WORD_KEY_HINTS = [
+  ...DICTIONARY_WORD_KEY_HINTS,
+  'hitz',
+  'entry',
+  'lemma',
+];
+
+const DICTIONARY_DEFINITION_MEANING_KEY_HINTS = [
+  ...DICTIONARY_MEANING_KEY_HINTS,
+  'acepcion',
+  'acepcio',
+  'adiera',
+  'sense',
+  'desc',
+  'defin',
+  'gloss',
+];
+
 const ORTHOGRAPHY_DICTIONARY_FETCH_LIMIT = 12_000;
 
 const normalizeDictionaryKey = (key: string): string =>
@@ -109,6 +151,33 @@ const normalizeOrthographyKey = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '')
     .trim();
+
+const normalizeDictionaryLookupValue = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+const runWithTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T | null> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  const result = await Promise.race<[T | null, null]>([
+    promise.then((value) => [value, null] as [T, null]),
+    timeoutPromise.then(() => [null, null] as [null, null]),
+  ]);
+
+  if (timeoutHandle) clearTimeout(timeoutHandle);
+  return result[0];
+};
 
 const clipText = (value: string, maxLength: number): string => {
   const normalized = value.replace(/\s+/g, ' ').trim();
@@ -167,8 +236,119 @@ const keyMatchesHints = (key: string, hints: string[]): boolean => {
   return hints.some((hint) => normalized.includes(hint));
 };
 
+const findColumnKeyByCandidates = (
+  keys: string[],
+  exactCandidates: string[],
+  hintCandidates: string[],
+  excluded: string[] = []
+): string | null => {
+  const excludedSet = new Set(excluded.filter(Boolean));
+
+  for (const key of keys) {
+    if (excludedSet.has(key)) continue;
+    if (exactCandidates.includes(key.toLowerCase())) return key;
+  }
+
+  for (const key of keys) {
+    if (excludedSet.has(key)) continue;
+    if (keyMatchesHints(key, hintCandidates)) return key;
+  }
+
+  return null;
+};
+
+const dedupeMeaningTexts = (values: string[]): string[] => {
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+
+  values.forEach((value) => {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (!normalized) return;
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(normalized);
+  });
+
+  return deduped;
+};
+
+const DICTIONARY_DEFINITION_METADATA_KEYS = new Set([
+  'id',
+  'source_id',
+  'word_id',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+  'lang',
+  'language',
+  'nivel',
+  'level',
+]);
+
+const splitDefinitionText = (text: string): string[] =>
+  text
+    .split(/\s*\/\/\s*|\r?\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const isDictionaryDefinitionMetadataKey = (key: string): boolean =>
+  DICTIONARY_DEFINITION_METADATA_KEYS.has(normalizeDictionaryKey(key));
+
+const isLikelyDictionaryDefinitionKey = (key: string): boolean => {
+  const normalized = key.toLowerCase();
+  if (
+    DICTIONARY_DEFINITION_MEANING_COLUMN_CANDIDATES.includes(normalized) ||
+    keyMatchesHints(key, DICTIONARY_DEFINITION_MEANING_KEY_HINTS)
+  ) {
+    return true;
+  }
+  return normalized.includes('acepcion') || normalized.includes('adiera');
+};
+
+const collectDefinitionTextsFromRow = (
+  row: Record<string, unknown>,
+  wordColumn: string,
+  preferredMeaningColumns: string[]
+): string[] => {
+  const keys = Object.keys(row);
+  const preferred = preferredMeaningColumns.filter(
+    (key) =>
+      key !== wordColumn &&
+      keys.includes(key) &&
+      !isDictionaryDefinitionMetadataKey(key)
+  );
+
+  const inferred = keys.filter(
+    (key) =>
+      key !== wordColumn &&
+      !isDictionaryDefinitionMetadataKey(key) &&
+      isLikelyDictionaryDefinitionKey(key)
+  );
+
+  const fallback = keys.filter(
+    (key) =>
+      key !== wordColumn &&
+      !isDictionaryDefinitionMetadataKey(key) &&
+      valueAsText(row[key]) != null
+  );
+
+  const orderedKeys = Array.from(new Set([...preferred, ...inferred, ...fallback]));
+  const values = orderedKeys.flatMap((key) => {
+    const rawText = valueAsText(row[key]);
+    if (!rawText) return [];
+    return splitDefinitionText(rawText);
+  });
+
+  return dedupeMeaningTexts(values);
+};
+
 const isDictionaryErrorForMissingTable = (message: string): boolean =>
   message.includes('relation') && message.includes('diccionario');
+
+const isDictionaryDefinitionErrorForMissingTable = (message: string): boolean =>
+  message.includes('relation') && message.includes(DICTIONARY_DEFINITION_TABLE);
 
 const isDictionaryErrorForInvalidColumn = (message: string): boolean =>
   (message.includes('column') && message.includes('does not exist')) ||
@@ -286,7 +466,7 @@ const probeDictionaryTextColumns = async (): Promise<string[]> => {
   if (isDictionaryTableUnavailable) return [];
   if (cachedDictionaryTextColumns) return cachedDictionaryTextColumns;
 
-  const { data, error } = await supabasePublic
+  const { data, error } = await supabase
     .from('diccionario')
     .select('*')
     .limit(1);
@@ -360,7 +540,7 @@ const fetchDictionaryRowByColumn = async (
     pattern: string,
     limit: number
   ): Promise<Array<Record<string, unknown>> | null> => {
-    const { data, error } = await supabasePublic
+    const { data, error } = await supabase
       .from('diccionario')
       .select('*')
       .ilike(column, pattern)
@@ -439,6 +619,271 @@ const fetchDictionaryRowByColumn = async (
   return null;
 };
 
+type DictionaryDefinitionColumns = {
+  wordColumn: string;
+  meaningColumns: string[];
+};
+
+const probeDictionaryDefinitionColumns = async (): Promise<DictionaryDefinitionColumns | null> => {
+  if (isDictionaryDefinitionTableUnavailable) return null;
+  if (cachedDictionaryDefinitionWordColumn && cachedDictionaryDefinitionMeaningColumns) {
+    return {
+      wordColumn: cachedDictionaryDefinitionWordColumn,
+      meaningColumns: cachedDictionaryDefinitionMeaningColumns,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from(DICTIONARY_DEFINITION_TABLE)
+    .select('*')
+    .limit(1);
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (isDictionaryDefinitionErrorForMissingTable(message)) {
+      isDictionaryDefinitionTableUnavailable = true;
+    }
+    return null;
+  }
+
+  const row = (data?.[0] ?? null) as Record<string, unknown> | null;
+  if (!row) {
+    const wordColumn =
+      cachedDictionaryDefinitionWordColumn ??
+      DICTIONARY_DEFINITION_WORD_COLUMN_CANDIDATES[0];
+    const meaningColumns =
+      cachedDictionaryDefinitionMeaningColumns ??
+      [...DICTIONARY_DEFINITION_MEANING_COLUMN_CANDIDATES];
+    cachedDictionaryDefinitionWordColumn = wordColumn;
+    cachedDictionaryDefinitionMeaningColumns = meaningColumns;
+    return { wordColumn, meaningColumns };
+  }
+
+  const keys = Object.keys(row);
+  const wordColumn =
+    findColumnKeyByCandidates(
+      keys,
+      DICTIONARY_DEFINITION_WORD_COLUMN_CANDIDATES,
+      DICTIONARY_DEFINITION_WORD_KEY_HINTS
+    ) ??
+    findColumnKeyByCandidates(
+      keys,
+      DICTIONARY_WORD_COLUMN_CANDIDATES,
+      DICTIONARY_WORD_KEY_HINTS
+    );
+  if (!wordColumn) return null;
+
+  const meaningColumns = keys.filter(
+    (key) =>
+      key !== wordColumn &&
+      !isDictionaryDefinitionMetadataKey(key) &&
+      isLikelyDictionaryDefinitionKey(key)
+  );
+
+  if (meaningColumns.length === 0) {
+    meaningColumns.push(
+      ...keys.filter(
+        (key) =>
+          key !== wordColumn &&
+          !isDictionaryDefinitionMetadataKey(key) &&
+          valueAsText(row[key]) != null
+      )
+    );
+  }
+
+  if (meaningColumns.length === 0) return null;
+
+  cachedDictionaryDefinitionWordColumn = wordColumn;
+  cachedDictionaryDefinitionMeaningColumns = meaningColumns;
+  return { wordColumn, meaningColumns };
+};
+
+const fetchDictionaryDefinitionRowsByWord = async (
+  columns: DictionaryDefinitionColumns,
+  terms: string[]
+): Promise<Array<Record<string, unknown>> | null> => {
+  if (isDictionaryDefinitionTableUnavailable) return null;
+  if (invalidDictionaryDefinitionWordColumns.has(columns.wordColumn)) return null;
+
+  const queryByPattern = async (
+    pattern: string,
+    limit: number
+  ): Promise<Array<Record<string, unknown>> | null> => {
+    const { data, error } = await supabase
+      .from(DICTIONARY_DEFINITION_TABLE)
+      .select('*')
+      .ilike(columns.wordColumn, pattern)
+      .limit(limit);
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (isDictionaryDefinitionErrorForMissingTable(message)) {
+        isDictionaryDefinitionTableUnavailable = true;
+        return [];
+      }
+
+      if (isDictionaryErrorForInvalidColumn(message)) {
+        invalidDictionaryDefinitionWordColumns.add(columns.wordColumn);
+        return null;
+      }
+
+      return [];
+    }
+
+    return (data ?? []) as Array<Record<string, unknown>>;
+  };
+
+  const stages: Array<{
+    patterns: string[];
+    toQueryPattern: (term: string) => string;
+    limit: number;
+  }> = [
+    {
+      patterns: terms,
+      toQueryPattern: (term) => term,
+      limit: 60,
+    },
+    {
+      patterns: terms,
+      toQueryPattern: (term) => `${term}%`,
+      limit: 80,
+    },
+    {
+      patterns: terms,
+      toQueryPattern: (term) => `%${term}%`,
+      limit: 120,
+    },
+  ];
+
+  for (const stage of stages) {
+    const collectedRows: Array<Record<string, unknown>> = [];
+
+    for (const term of stage.patterns) {
+      const rows = await queryByPattern(stage.toQueryPattern(term), stage.limit);
+      if (rows === null) return null;
+      if (rows.length === 0) continue;
+      collectedRows.push(...rows);
+    }
+
+    if (collectedRows.length > 0) return collectedRows;
+  }
+
+  return [];
+};
+
+const fetchDictionaryDefinitionsForWord = async (word: string): Promise<string[]> => {
+  const normalizedWord = word.trim();
+  if (!normalizedWord) return [];
+  if (isDictionaryDefinitionTableUnavailable) return [];
+
+  const cacheKey = normalizeDictionaryLookupValue(normalizedWord);
+  if (!cacheKey) return [];
+
+  const cached = dictionaryDefinitionsCacheByWord.get(cacheKey);
+  if (cached) return cached;
+
+  const terms = buildDictionarySearchVariants(normalizedWord);
+  const fallbackTerms = terms.length > 0 ? terms : [normalizedWord];
+  const normalizedTerms = new Set(
+    [normalizedWord, ...fallbackTerms]
+      .map(normalizeDictionaryLookupValue)
+      .filter(Boolean)
+  );
+
+  const queryRows = async (
+    allowRetry: boolean
+  ): Promise<{
+    rows: Array<Record<string, unknown>>;
+    columns: DictionaryDefinitionColumns;
+  } | null> => {
+    const columns = await probeDictionaryDefinitionColumns();
+    if (!columns) return null;
+
+    const rows = await fetchDictionaryDefinitionRowsByWord(columns, fallbackTerms);
+    if (rows !== null) return { rows, columns };
+    if (!allowRetry) return null;
+
+    cachedDictionaryDefinitionWordColumn = null;
+    cachedDictionaryDefinitionMeaningColumns = null;
+    return queryRows(false);
+  };
+
+  const result = await queryRows(true);
+  if (!result) {
+    return [];
+  }
+
+  const { rows, columns } = result;
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const meanings = dedupeMeaningTexts(
+    rows.flatMap((row) => {
+        const candidateWord = valueAsText(row[columns.wordColumn]);
+        if (candidateWord) {
+          const normalizedCandidateWord = normalizeDictionaryLookupValue(candidateWord);
+          const isDirectMatch = normalizedTerms.has(normalizedCandidateWord);
+          const isLooseMatch = Array.from(normalizedTerms).some((term) => {
+            if (!term) return false;
+            return (
+              normalizedCandidateWord === term ||
+              normalizedCandidateWord.startsWith(`${term} `) ||
+              normalizedCandidateWord.endsWith(` ${term}`) ||
+              normalizedCandidateWord.includes(` ${term} `)
+            );
+          });
+
+          if (!isDirectMatch && !isLooseMatch) return [];
+        }
+
+        return collectDefinitionTextsFromRow(
+          row,
+          columns.wordColumn,
+          columns.meaningColumns
+        );
+      })
+  );
+
+  dictionaryDefinitionsCacheByWord.set(cacheKey, meanings);
+  return meanings;
+};
+
+const fetchDictionaryDefinitionsByWords = async (
+  words: string[]
+): Promise<Map<string, string[]>> => {
+  const definitionsByWord = new Map<string, string[]>();
+  const uniqueWords = Array.from(
+    new Set(
+      words
+        .map((word) => word.trim())
+        .filter(Boolean)
+    )
+  );
+
+  for (const word of uniqueWords) {
+    const key = normalizeDictionaryLookupValue(word);
+    if (!key) continue;
+    const definitions = await fetchDictionaryDefinitionsForWord(word);
+    definitionsByWord.set(key, definitions);
+  }
+
+  return definitionsByWord;
+};
+
+export const fetchDictionaryDefinitionsByWord = async (
+  term: string
+): Promise<string[]> => {
+  const normalized = term.trim();
+  if (!normalized) return [];
+
+  const fromDefinitionsTable = await runWithTimeout(
+    fetchDictionaryDefinitionsForWord(normalized),
+    4_500
+  );
+  return fromDefinitionsTable ?? [];
+};
+
 export const lookupDictionaryMeaning = async (
   term: string
 ): Promise<DictionaryMeaning | null> => {
@@ -468,13 +913,18 @@ export const lookupDictionaryMeaning = async (
     const wordKey = findWordKey(row) ?? column;
     cachedDictionaryWordColumn = wordKey;
 
+    const hitza = valueAsText(row[wordKey]) ?? normalized;
+    const definitions = await fetchDictionaryDefinitionsForWord(hitza);
+    if (definitions.length > 0) {
+      return { hitza, esanahia: definitions[0] };
+    }
+
     const meaningKey = findMeaningKey(row, wordKey);
     if (!meaningKey) continue;
 
     const esanahia = valueAsText(row[meaningKey]);
     if (!esanahia) continue;
 
-    const hitza = valueAsText(row[wordKey]) ?? normalized;
     return { hitza, esanahia };
   }
 
@@ -919,8 +1369,42 @@ export const fetchUserFavoriteWords = async (
 
     if (deduped.size === 0) continue;
 
+    const baseCards = Array.from(deduped.values());
+    const definitionsByWord = await fetchDictionaryDefinitionsByWords(
+      baseCards.map((card) => card.hitza)
+    );
+
+    const expandedCards = baseCards.flatMap((card) => {
+      const definitionKey = normalizeDictionaryLookupValue(card.hitza);
+      const dictionaryDefinitions = definitionsByWord.get(definitionKey) ?? [];
+      const definitionRows = dedupeMeaningTexts([
+        ...(card.esanahia ? [card.esanahia] : []),
+        ...dictionaryDefinitions,
+      ]);
+
+      if (definitionRows.length === 0) return [card];
+
+      return definitionRows.map((definition, definitionIndex) => ({
+        ...card,
+        id: `${card.id}:def-${definitionIndex + 1}`,
+        esanahia: definition,
+      }));
+    });
+
+    const expandedDeduped = new Map<string, FavoriteWordCard>();
+    expandedCards.forEach((card) => {
+      const dedupeKey = `${card.hitza.toLowerCase()}::${card.sinonimoak
+        .join('|')
+        .toLowerCase()}::${(card.esanahia ?? '').toLowerCase()}`;
+      if (!expandedDeduped.has(dedupeKey)) {
+        expandedDeduped.set(dedupeKey, card);
+      }
+    });
+
+    if (expandedDeduped.size === 0) continue;
+
     cachedFavoriteUserColumn = column;
-    return Array.from(deduped.values());
+    return Array.from(expandedDeduped.values());
   }
 
   return [];
@@ -958,7 +1442,7 @@ export const fetchOrthographyWordPool = async (): Promise<OrthographyPoolWord[]>
     return Array.from(merged.values());
   }
 
-  const { data, error } = await supabasePublic
+  const { data, error } = await supabase
     .from('diccionario')
     .select('*')
     .limit(ORTHOGRAPHY_DICTIONARY_FETCH_LIMIT);
@@ -971,20 +1455,45 @@ export const fetchOrthographyWordPool = async (): Promise<OrthographyPoolWord[]>
     return Array.from(merged.values());
   }
 
-  ((data ?? []) as Array<Record<string, unknown>>).forEach((row, index) => {
-    const wordKey = findWordKey(row);
-    if (!wordKey) return;
+  const dictionaryEntries = ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row, index) => {
+      const wordKey = findWordKey(row);
+      if (!wordKey) return null;
 
-    const hitza = valueAsText(row[wordKey]);
-    if (!hitza) return;
+      const hitza = valueAsText(row[wordKey]);
+      if (!hitza) return null;
 
-    const meaningKey = findMeaningKey(row, wordKey);
-    const meaning = meaningKey ? valueAsText(row[meaningKey]) : null;
+      return { row, index, wordKey, hitza };
+    })
+    .filter(
+      (
+        entry
+      ): entry is {
+        row: Record<string, unknown>;
+        index: number;
+        wordKey: string;
+        hitza: string;
+      } => Boolean(entry)
+    );
+
+  const definitionsByWord = await fetchDictionaryDefinitionsByWords(
+    dictionaryEntries.map((entry) => entry.hitza)
+  );
+
+  dictionaryEntries.forEach(({ row, index, wordKey, hitza }) => {
+    const normalizedWord = normalizeDictionaryLookupValue(hitza);
+    const dictionaryMeaning =
+      definitionsByWord.get(normalizedWord)?.[0] ?? null;
+
+    const fallbackMeaningKey = findMeaningKey(row, wordKey);
+    const fallbackMeaning = fallbackMeaningKey
+      ? valueAsText(row[fallbackMeaningKey])
+      : null;
 
     mergeWord({
       sourceId: `dict-${index}`,
       hitza: hitza.trim().toLowerCase(),
-      clue: buildDictionaryClue(hitza, meaning),
+      clue: buildDictionaryClue(hitza, dictionaryMeaning ?? fallbackMeaning),
       source: 'dictionary',
     });
   });

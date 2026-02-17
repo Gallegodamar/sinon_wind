@@ -34,10 +34,20 @@ export const SetupScreen: React.FC<Props> = ({
       topRightControl={topRightControl}
       header={
         <div className="flex w-full items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-xl font-bold text-slate-900 md:text-2xl">
-              Sinonimoak
-            </h1>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-sky-200/80 bg-white/80 shadow-[0_12px_20px_-16px_rgba(7,53,111,0.8)]">
+              <img
+                src="/elio_blue_favicon_64.png"
+                alt="Elio"
+                className="h-8 w-8 object-contain"
+              />
+            </span>
+            <div>
+              <p className="section-label !tracking-[0.16em]">Elio</p>
+              <h1 className="font-display text-xl font-bold text-slate-900 md:text-2xl">
+                Sinonimoen Jokoa
+              </h1>
+            </div>
           </div>
           {!canSelectDifficulty ? (
             <button onClick={onOpenAuth} className="btn-secondary">
@@ -48,16 +58,23 @@ export const SetupScreen: React.FC<Props> = ({
       }
     >
       <div className="grid gap-5 xl:grid-cols-[1.22fr_1fr]">
-        <section className="surface-card surface-card--accent p-5 md:p-7">
-          <h2 className="font-display mt-3 text-3xl font-semibold leading-[1.05] text-cyan-50 md:text-4xl">
-            Jolastu orain
+        <section className="surface-card surface-card--accent relative overflow-hidden p-5 md:p-7">
+          <div className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-cyan-200/25 blur-2xl" />
+          <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-sky-200/20 blur-2xl" />
+          <p className="section-label !text-cyan-100">Prest?</p>
+          <h2 className="font-display mt-2 text-3xl font-semibold leading-[1.05] text-cyan-50 md:text-4xl">
+            Jolastu, ikasi eta igo sailkapenean
           </h2>
+          <p className="mt-4 max-w-xl text-sm font-medium leading-relaxed text-cyan-50/90">
+            Mailaz maila sinonimoak landu, zure ortografia entrenatu eta
+            gogoko hitzak txarteletan berrikusi.
+          </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <button
               onClick={onStart}
               disabled={isLoadingWords}
-              className="inline-flex items-center justify-center rounded-2xl bg-white px-6 py-3.5 text-sm font-extrabold uppercase tracking-[0.09em] text-teal-800 shadow-lg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+              className="inline-flex items-center justify-center rounded-2xl bg-white px-6 py-3.5 text-sm font-extrabold uppercase tracking-[0.09em] text-sky-800 shadow-lg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
             >
               {isLoadingWords ? 'Kargatzen...' : 'Hasi jolasten'}
             </button>
@@ -83,7 +100,7 @@ export const SetupScreen: React.FC<Props> = ({
             <div>
               <label className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                 <span>Jokalari kopurua</span>
-                <span className="rounded-full bg-teal-100 px-2.5 py-1 text-teal-700">
+                <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-700">
                   {numPlayers}
                 </span>
               </label>
@@ -115,8 +132,8 @@ export const SetupScreen: React.FC<Props> = ({
                     className={
                       'rounded-xl border px-2 py-2.5 text-sm font-bold transition ' +
                       (difficulty === level
-                        ? 'border-teal-600 bg-teal-600 text-white shadow-md'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300') +
+                        ? 'border-sky-600 bg-sky-600 text-white shadow-md shadow-sky-900/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300') +
                       (!canSelectDifficulty && level !== 1
                         ? ' cursor-not-allowed opacity-45 hover:border-slate-200'
                         : '')

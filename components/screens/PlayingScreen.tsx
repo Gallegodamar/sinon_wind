@@ -44,7 +44,7 @@ export const PlayingScreen: React.FC<PlayingScreenProps> = ({
               {playerName}
             </h2>
           </div>
-          <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal-700">
+          <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-bold text-sky-700">
             {currentQuestionIndex + 1}/{totalQuestions}
           </span>
         </div>
@@ -61,7 +61,8 @@ export const PlayingScreen: React.FC<PlayingScreenProps> = ({
     >
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <section className="surface-card surface-card--muted p-5 md:p-6">
-          <p className="font-display mt-1 break-words text-5xl font-semibold text-slate-900 md:text-6xl">
+          <p className="section-label">Galdera</p>
+          <p className="font-display mt-3 break-words bg-gradient-to-r from-sky-900 via-sky-700 to-cyan-600 bg-clip-text text-5xl font-semibold text-transparent md:text-6xl">
             {currentQuestion.wordData.hitza}
           </p>
 
@@ -71,7 +72,7 @@ export const PlayingScreen: React.FC<PlayingScreenProps> = ({
             </div>
             <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-teal-600 to-cyan-500 transition-all duration-300"
+                className="h-full rounded-full bg-gradient-to-r from-sky-700 to-cyan-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -87,10 +88,10 @@ export const PlayingScreen: React.FC<PlayingScreenProps> = ({
 
                 if (!isAnswered) {
                   buttonClass +=
-                    'border-slate-200 bg-white text-slate-800 hover:border-teal-400';
+                    'border-slate-200 bg-white text-slate-800 hover:border-sky-400';
                 } else if (option === currentQuestion.correctAnswer) {
                   buttonClass +=
-                    'border-emerald-400 bg-emerald-50 text-emerald-800';
+                    'border-cyan-400 bg-cyan-50 text-sky-800';
                 } else if (option === selectedAnswer) {
                   buttonClass += 'border-rose-300 bg-rose-50 text-rose-700';
                 } else {

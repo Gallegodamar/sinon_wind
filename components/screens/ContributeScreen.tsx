@@ -493,25 +493,25 @@ const homeShortcuts: Array<{
     id: 'ortografia',
     label: 'Ortografia',
     icon: <SpellIcon />,
-    accentClass: 'from-pink-500/15 to-rose-500/15 text-rose-700',
+    accentClass: 'from-sky-500/15 to-cyan-500/15 text-sky-700',
   },
   {
     id: 'txartelak',
     label: 'Txartelak',
     icon: <CardsIcon />,
-    accentClass: 'from-emerald-500/15 to-teal-500/15 text-emerald-700',
+    accentClass: 'from-cyan-500/15 to-sky-500/15 text-cyan-700',
   },
   {
     id: 'eguneko',
     label: 'Sailkapena',
     icon: <CrownIcon />,
-    accentClass: 'from-amber-400/20 to-orange-500/15 text-amber-700',
+    accentClass: 'from-sky-400/20 to-cyan-500/15 text-sky-700',
   },
   {
     id: 'estatistikak',
     label: 'Estatistikak',
     icon: <StatsIcon />,
-    accentClass: 'from-fuchsia-500/15 to-violet-500/15 text-violet-700',
+    accentClass: 'from-sky-500/15 to-cyan-500/15 text-sky-700',
   },
 ];
 
@@ -1167,7 +1167,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 className={
                   'group rounded-xl border px-1 py-1 transition duration-200 sm:rounded-2xl sm:px-1.5 sm:py-1.5 ' +
                   (isActive
-                    ? 'border-teal-300 bg-gradient-to-br from-teal-50 to-cyan-50 text-teal-700 shadow-[0_10px_18px_-14px_rgba(13,148,136,0.8)]'
+                    ? 'border-sky-300 bg-gradient-to-br from-sky-50 to-cyan-50 text-sky-700 shadow-[0_10px_18px_-14px_rgba(12,102,195,0.8)]'
                     : 'border-slate-200/70 bg-white/80 text-slate-400 hover:border-slate-300 hover:text-slate-700')
                 }
               >
@@ -1175,7 +1175,7 @@ export const ContributeScreen: React.FC<Props> = ({
                   className={
                     'mx-auto flex h-5 w-5 items-center justify-center rounded-lg transition sm:h-6 sm:w-6 sm:rounded-xl ' +
                     (isActive
-                      ? 'bg-teal-100/80'
+                      ? 'bg-sky-100/80'
                       : 'bg-slate-100/70 group-hover:bg-slate-200/70')
                   }
                 >
@@ -1200,7 +1200,7 @@ export const ContributeScreen: React.FC<Props> = ({
               <button
                 onClick={startDailyCompetition}
                 disabled={isLoadingWords || hasPlayedToday}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-[0.09em] text-teal-800 shadow-lg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-[0.09em] text-sky-800 shadow-lg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
               >
                 <DailyIcon />
                 {isLoadingWords
@@ -1279,7 +1279,7 @@ export const ContributeScreen: React.FC<Props> = ({
                         {entry.player_name}
                       </span>
                     </div>
-                    <p className="font-display text-2xl font-semibold text-teal-700">
+                    <p className="font-display text-2xl font-semibold text-sky-700">
                       {entry.score}
                     </p>
                   </div>
@@ -1301,7 +1301,7 @@ export const ContributeScreen: React.FC<Props> = ({
                   className={
                     'rounded-xl border px-3 py-3 text-sm font-bold transition ' +
                     (difficulty === level
-                      ? 'border-teal-600 bg-teal-600 text-white shadow-md'
+                      ? 'border-sky-600 bg-sky-600 text-white shadow-md'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
                   }
                 >
@@ -1473,7 +1473,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 className={
                   'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
                   (flashDeckMode === 'level'
-                    ? 'border-teal-500 bg-teal-500 text-white'
+                    ? 'border-sky-500 bg-sky-500 text-white'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
                 }
               >
@@ -1488,7 +1488,7 @@ export const ContributeScreen: React.FC<Props> = ({
                 className={
                   'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
                   (flashDeckMode === 'favorites'
-                    ? 'border-teal-500 bg-teal-500 text-white'
+                    ? 'border-sky-500 bg-sky-500 text-white'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
                 }
               >
@@ -1505,7 +1505,7 @@ export const ContributeScreen: React.FC<Props> = ({
                     className={
                       'rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] transition ' +
                       (flashLevel === level
-                        ? 'border-teal-500 bg-teal-500 text-white'
+                        ? 'border-sky-500 bg-sky-500 text-white'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
                     }
                   >
@@ -1591,7 +1591,7 @@ export const ContributeScreen: React.FC<Props> = ({
                             {currentFlashCard.sinonimoak.map((synonym, idx) => (
                               <span
                                 key={`${synonym}-${idx}`}
-                                className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-base font-bold text-teal-700 md:text-lg"
+                                className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-base font-bold text-sky-700 md:text-lg"
                               >
                                 {synonym}
                               </span>
@@ -1749,7 +1749,7 @@ export const ContributeScreen: React.FC<Props> = ({
                           <div key={`weekly-${point.key}`} className="flex flex-col items-center gap-1">
                             <div className="flex h-36 w-full items-end">
                               <div
-                                className="w-full rounded-t-lg bg-gradient-to-t from-teal-500 to-cyan-400"
+                                className="w-full rounded-t-lg bg-gradient-to-t from-sky-500 to-cyan-400"
                                 style={{ height: `${heightPercent}%` }}
                                 title={`${point.label}: ${point.count}`}
                               />
@@ -1810,7 +1810,7 @@ export const ContributeScreen: React.FC<Props> = ({
                             >
                               <div className="flex h-36 w-full items-end">
                                 <div
-                                  className="w-full rounded-t-md bg-gradient-to-t from-indigo-500 to-violet-400"
+                                  className="w-full rounded-t-md bg-gradient-to-t from-sky-600 to-cyan-400"
                                   style={{ height: `${heightPercent}%` }}
                                   title={`${point.key}: ${point.count}`}
                                 />
@@ -1938,7 +1938,7 @@ export const ContributeScreen: React.FC<Props> = ({
                     className={
                       'rounded-xl border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition ' +
                       (competitionPeriod === period
-                        ? 'border-teal-500 bg-teal-500 text-white'
+                        ? 'border-sky-500 bg-sky-500 text-white'
                         : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')
                     }
                   >
@@ -1979,7 +1979,7 @@ export const ContributeScreen: React.FC<Props> = ({
                           {entry.correct}/{entry.total} - {entry.time_seconds.toFixed(1)}s
                         </p>
                       </div>
-                      <p className="font-display text-2xl font-semibold text-teal-700">
+                      <p className="font-display text-2xl font-semibold text-sky-700">
                         {entry.score}
                       </p>
                     </div>
@@ -2007,7 +2007,7 @@ export const ContributeScreen: React.FC<Props> = ({
                         {entry.total_questions}
                       </p>
                     </div>
-                    <p className="font-display text-2xl font-semibold text-teal-700">
+                    <p className="font-display text-2xl font-semibold text-sky-700">
                       {entry.total_score}
                     </p>
                   </div>
@@ -2050,7 +2050,7 @@ export const ContributeScreen: React.FC<Props> = ({
                           {run.correct}/{run.total} - {run.time_seconds.toFixed(1)}s
                         </p>
                       </div>
-                      <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-bold text-teal-700">
+                      <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-700">
                         {run.score} p
                       </span>
                     </summary>
@@ -2076,3 +2076,4 @@ export const ContributeScreen: React.FC<Props> = ({
     </AppShell>
   );
 };
+
